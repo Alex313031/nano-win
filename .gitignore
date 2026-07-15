@@ -13,4 +13,7 @@ Thumbs.db
 *.res
 *.stamp
 /out/
-nano.exe
+/sources/
+*.exe
+*.dll
+*-w64-mingw32

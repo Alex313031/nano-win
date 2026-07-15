@@ -1,0 +1,627 @@
+diff --git a/README b/README
+index 734b406d..f2008734 100644
+--- a/README
++++ b/README
+@@ -1,3 +1,41 @@
++                -=* GNU nano for Windows *=-
++
++Overview
++
++    Here is the source code for a ported, standalone version of GNU nano,
++    a famous, easy-to-use and handy text editor on Linux.
++
++    The script "build_nano-win.sh" can be run in MSYS2 with the mingw-w64
++    toolchains installed.  That script statically links the executable,
++    nano.exe, so that it does not require any third-party .DLL files to run,
++    including any Microsoft Visual C++ Redistributable packages.
++
++Enhancements
++
++    + .nanorc is loaded from "%USERPROFILE%\.nanorc" with normal privilege
++      and from "%ALLUSERSPROFILE%\.nanorc" with elevated privilege.
++    + Systemwide nanorc is loaded from "%ALLUSERSPROFILE%\nanorc".
++    + Added C++11 keywords and identifiers with special meaning
++      (That is, override and final) in "doc/syntax/c.nanorc".
++    + Vim-style locking files have been enabled.
++
++Features Removed
++
++    + Spell checker (This requires the infamous `fork()` syscall. )
++    + Stop and continue (This requires the `SIGSTOP` signal. )
++    + Native language support (This requires hard-coding the path to
++      the directory containing locale files in the executable. )
++
++Workarounds
++
++    + Left `Alt` key can be used as a `Meta` key.
++    + UNIX style end-of-line handling by default.
++    + Standard-conforming `sprintf()` function from mingw-w64.
++    + UTF-8 support with UCRT (This is available only with 64-bit builds
++      and requires the 'Beta: Use Unicode UTF-8 for worldwide language
++      support' option in Windows 10 Region Settings.)
++
++===============================================================================
+ 
+           GNU nano -- a simple editor, inspired by Pico
+ 
+diff --git a/autogen.sh b/autogen.sh
+index ef7fbcb5..5f8d6138 100755
+--- a/autogen.sh
++++ b/autogen.sh
+@@ -6,7 +6,9 @@ gnulib_hash="88592a2880cf39a2f597cd0294a90d8dd7faa2df"
+ 
+ modules="
+ 	canonicalize-lgpl
++	fsync
+ 	futimens
++	getcwd
+ 	getdelim
+ 	getline
+ 	getopt-gnu
+diff --git a/package_nano-win.sh b/package_nano-win.sh
+new file mode 100755
+index 00000000..f3695be1
+--- /dev/null
++++ b/package_nano-win.sh
+@@ -0,0 +1,11 @@
++#!/bin/bash -e
++
++_pkgversion="$(git describe --tags || echo "v0.0.0-0-unknown")"
++_revision="$(git rev-list --count HEAD)"
++
++strip -s pkg_{i686,x86_64}-w64-mingw32/bin/nano.exe
++cp doc/sample.nanorc.in .nanorc
++7z a -aoa -mmt"$(nproc)" --  \
++  "nano-win_${_revision}_${_pkgversion}.7z"  \
++  pkg_{i686,x86_64}-w64-mingw32/{bin/nano.exe,share/{nano,doc}/}  \
++  .nanorc
+diff --git a/src/files.c b/src/files.c
+index 0cc8b9bc..02a1503b 100644
+--- a/src/files.c
++++ b/src/files.c
+@@ -29,7 +29,10 @@
+ #endif
+ #include <string.h>
+ #include <unistd.h>
+-#include <sys/wait.h>
++#define WIN32_LEAN_AND_MEAN 1
++#include <windows.h>
++#include <shlobj.h>
++#include <shlwapi.h>
+ 
+ #define RW_FOR_ALL  (S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH)
+ 
+@@ -149,25 +152,14 @@ bool write_lockfile(const char *lockfilename, const char *filename, bool modifie
+ {
+ #if defined(HAVE_PWD_H) && defined(HAVE_GETEUID)
+ 	pid_t mypid = getpid();
+-	uid_t myuid = geteuid();
+-	struct passwd *mypwuid = getpwuid(myuid);
+-	char myhostname[32];
++	char myhostname[32] = "localhost";
+ 	int fd;
+ 	FILE *filestream = NULL;
+ 	char *lockdata;
+ 	size_t wroteamt;
+-
+-	if (mypwuid == NULL) {
+-		/* TRANSLATORS: Keep the next seven messages at most 76 characters. */
+-		statusline(MILD, _("Couldn't determine my identity for lock file"));
+-		return FALSE;
+-	}
+-
+-	if (gethostname(myhostname, 31) < 0 && errno != ENAMETOOLONG) {
+-		statusline(MILD, _("Couldn't determine hostname: %s"), strerror(errno));
+-		return FALSE;
+-	} else
+-		myhostname[31] = '\0';
++	DWORD usernamelen = 32;
++	char myusername[32] = "";
++	GetUserNameA(myusername, &usernamelen);
+ 
+ 	/* First make sure to remove an existing lock file. */
+ 	if (!delete_lockfile(lockfilename))
+@@ -212,7 +204,7 @@ bool write_lockfile(const char *lockfilename, const char *filename, bool modifie
+ 	lockdata[25] = (mypid / 256) % 256;
+ 	lockdata[26] = (mypid / (256 * 256)) % 256;
+ 	lockdata[27] = mypid / (256 * 256 * 256);
+-	strncpy(&lockdata[28], mypwuid->pw_name, 16);
++	strncpy(&lockdata[28], myusername, 16);
+ 	strncpy(&lockdata[68], myhostname, 32);
+ 	strncpy(&lockdata[108], filename, 768);
+ 	lockdata[1007] = (modified) ? 0x55 : 0x00;
+@@ -365,7 +357,7 @@ bool has_valid_path(const char *filename)
+ 			statusline(ALERT, _("Path '%s': %s"), parentdir, strerror(errno));
+ 	} else if (!S_ISDIR(parentinfo.st_mode))
+ 		statusline(ALERT, _("Path '%s' is not a directory"), parentdir);
+-	else if (access(parentdir, X_OK) < 0)
++	else if (access(parentdir, R_OK) < 0)
+ 		statusline(ALERT, _("Path '%s' is not accessible"), parentdir);
+ #ifndef NANO_TINY
+ 	else if (ISSET(LOCKING) && !ISSET(VIEW_MODE) && access(parentdir, W_OK) < 0)
+@@ -422,7 +414,7 @@ bool open_buffer(const char *filename, bool new_one)
+ 			return FALSE;
+ 		}
+ #elif defined(HAVE_GETEUID)
+-		if (new_one && !(fileinfo.st_mode & (S_IWUSR|S_IWGRP|S_IWOTH)) && geteuid() == ROOT_UID)
++		if (new_one && !(fileinfo.st_mode & (S_IWUSR|S_IWGRP|S_IWOTH)) && IsUserAnAdmin())
+ 			statusline(ALERT, _("'%s' is meant to be read-only"), realname);
+ #endif
+ 	} else if (*filename && filename[strlen(filename) - 1] == '/') {
+@@ -755,7 +747,7 @@ void read_file(FILE *f, int fd, const char *filename, bool undoable)
+ 
+ 	/* When reading from stdin, restore the terminal and reenter curses mode. */
+ 	if (isendwin()) {
+-		if (!isatty(STDIN_FILENO))
++		if (GetConsoleWindow() == NULL)
+ 			reconnect_and_store_state();
+ 		terminal_init();
+ 		doupdate();
+@@ -1393,6 +1385,12 @@ char *get_full_path(const char *origpath)
+ 
+ 	free(untilded);
+ 
++	/* Replace backslashes with forwardslashes. */
++	if(target)
++		for(slash = target;  *slash;  ++slash)
++			if(*slash == '\\')
++				*slash = '/';
++
+ 	return target;
+ }
+ 
+@@ -1418,7 +1416,7 @@ char *check_writable_directory(const char *path)
+  * file stream opened in read-write mode.  On error, return NULL. */
+ char *safe_tempfile(FILE **stream)
+ {
+-	const char *env_dir = getenv("TMPDIR");
++	const char *env_dir = getenv("TMP");
+ 	char *tempdir = NULL, *tempfile_name = NULL;
+ 	char *extension;
+ 	int descriptor;
+@@ -1432,7 +1430,7 @@ char *safe_tempfile(FILE **stream)
+ 		tempdir = check_writable_directory(P_tmpdir);
+ 
+ 	if (tempdir == NULL)
+-		tempdir = copy_of("/tmp/");
++		tempdir = copy_of("C:/Windows/Temp/");
+ 
+ 	extension = strrchr(openfile->filename, '.');
+ 
+@@ -1575,7 +1573,7 @@ bool make_backup_of(char *realname, struct stat fileinfo)
+ 		 * just use the file-name portion of the given path. */
+ 		if (thename) {
+ 			for (int i = 0; thename[i] != '\0'; i++)
+-				if (thename[i] == '/')
++				if (strchr("<>:\"/\\|?*", thename[i]))
+ 					thename[i] = '!';
+ 		} else
+ 			thename = copy_of(tail(realname));
+@@ -1656,8 +1654,10 @@ bool make_backup_of(char *realname, struct stat fileinfo)
+ 
+ 	/* Set the backup's timestamps to those of the original file.
+ 	 * Failure is unimportant: saving the file apparently worked. */
+-	filetimes[0] = fileinfo.st_atim;
+-	filetimes[1] = fileinfo.st_mtim;
++	filetimes[0].tv_sec = fileinfo.st_atime;
++	filetimes[0].tv_nsec = 0;
++	filetimes[1].tv_sec = fileinfo.st_mtime;
++	filetimes[1].tv_nsec = 0;
+ 	IGNORE_CALL_RESULT(futimens(descriptor, filetimes));
+ 
+ 	if (fclose(backup_file) == 0) {
+@@ -2334,6 +2334,11 @@ char *expand_leading_tilde(const char *path)
+ 
+ 	free(tilded);
+ 
++	/* Replace backslashes with forwardslashes. */
++	for(tilded = retval;  *tilded;  ++tilded)
++		if(*tilded == '\\')
++			*tilded = '/';
++
+ 	return retval;
+ }
+ 
+@@ -2442,7 +2447,7 @@ char **filename_completion(const char *morsel, size_t *num_matches)
+ 		*slash = '\0';
+ 		dirname = expand_leading_tilde(dirname);
+ 		/* A non-absolute path is relative to the current browser directory. */
+-		if (dirname[0] != '/') {
++		if (PathIsRelativeA(dirname)) {
+ 			dirname = nrealloc(dirname, strlen(present_path) + strlen(wasdirname) + 1);
+ 			sprintf(dirname, "%s%s", present_path, wasdirname);
+ 		}
+diff --git a/src/nano.c b/src/nano.c
+index 129ff787..60d05564 100644
+--- a/src/nano.c
++++ b/src/nano.c
+@@ -41,6 +41,9 @@
+ #ifdef __linux__
+ #include <sys/vt.h>
+ #endif
++#define WIN32_LEAN_AND_MEAN 1
++#include <windows.h>
++#include <shlobj.h>
+ 
+ #ifdef ENABLE_MULTIBUFFER
+ #define read_them_all  TRUE
+@@ -230,10 +233,6 @@ void restore_terminal(void)
+ {
+ 	curs_set(1);
+ 	endwin();
+-#ifndef NANO_TINY
+-	printf("\x1B[?2004l");
+-	fflush(stdout);
+-#endif
+ 	tcsetattr(STDIN_FILENO, TCSANOW, &original_state);
+ }
+ 
+@@ -839,7 +838,7 @@ void restore_handler_for_Ctrl_C(void)
+ /* Reconnect standard input to the tty, and store its state. */
+ void reconnect_and_store_state(void)
+ {
+-	int thetty = open("/dev/tty", O_RDONLY);
++	int thetty = open("CONIN$", O_RDONLY);
+ 
+ 	if (thetty < 0 || dup2(thetty, STDIN_FILENO) < 0)
+ 		die(_("Could not reconnect stdin to keyboard\n"));
+@@ -855,17 +854,21 @@ void reconnect_and_store_state(void)
+ bool scoop_stdin(void)
+ {
+ 	FILE *stream;
++	int fd;
+ 
+ 	restore_terminal();
+ 
+ 	/* When input comes from a terminal, show a helpful message. */
+-	if (isatty(STDIN_FILENO))
+-		fprintf(stderr, _("Reading data from keyboard; type ^D or ^D^D to finish.\n"));
++	if (GetConsoleWindow() != NULL)
++		fprintf(stderr, _("Reading data from keyboard; type ^Z to finish.\n"));
+ 
+ 	/* Open standard input. */
+-	stream = fopen("/dev/stdin", "rb");
++	fd = dup(0);
++	stream = fdopen(fd, "rb");
+ 	if (stream == NULL) {
+ 		int errnumber = errno;
++		if(fd != -1)
++			close(fd);
+ 
+ 		terminal_init();
+ 		doupdate();
+@@ -1229,12 +1232,6 @@ void terminal_init(void)
+ 		enable_flow_control();
+ 
+ 	disable_kb_interrupt();
+-
+-#ifndef NANO_TINY
+-	/* Tell the terminal to enable bracketed pastes. */
+-	printf("\x1B[?2004h");
+-	fflush(stdout);
+-#endif
+ }
+ 
+ /* Ask ncurses for a keycode, or assign a default one. */
+@@ -1839,6 +1836,9 @@ int main(int argc, char **argv)
+ 		{NULL, 0, NULL, 0}
+ 	};
+ 
++  /* Set default file mode to binary, as on Linux. */
++  _set_fmode(_O_BINARY);
++
+ #ifdef __linux__
+ 	struct vt_stat dummy;
+ 
+@@ -1859,7 +1859,7 @@ int main(int argc, char **argv)
+ #ifdef ENABLE_UTF8
+ 	/* If setting the locale is successful and it uses UTF-8, we will
+ 	 * need to use the multibyte functions for text processing. */
+-	if (setlocale(LC_ALL, "") && strcmp(nl_langinfo(CODESET), "UTF-8") == 0)
++	if (setlocale(LC_ALL, ".65001") && GetConsoleCP() == 65001)
+ 		using_utf8 = TRUE;
+ #else
+ 	setlocale(LC_ALL, "");
+@@ -2152,13 +2152,8 @@ int main(int argc, char **argv)
+ 		}
+ 	}
+ 
+-#ifndef NANO_TINY
+-	set_up_sigwinch_handler();
+-#endif
+-
+-	/* Curses needs TERM; if it is unset, try falling back to a VT220. */
+-	if (getenv("TERM") == NULL)
+-		putenv("TERM=vt220");
++	/* Always use the Windows console driver. */
++	putenv("TERM=#win32con");
+ 
+ 	/* Enter into curses mode.  Abort if this fails. */
+ 	if (initscr() == NULL)
+@@ -2618,7 +2613,7 @@ int main(int argc, char **argv)
+ 	UNSET(NOREAD_MODE);
+ 
+ 	/* Nano is a hands-on editor -- it needs a keyboard. */
+-	if (!isatty(STDIN_FILENO))
++	if (GetConsoleWindow() == NULL)
+ 		die(_("Standard input is not a terminal\n"));
+ 
+ 	/* If no filenames were given, or all of them were invalid things like
+diff --git a/src/rcfile.c b/src/rcfile.c
+index 59d932ae..f3cb137b 100644
+--- a/src/rcfile.c
++++ b/src/rcfile.c
+@@ -30,6 +30,7 @@
+ #include <glob.h>
+ #include <string.h>
+ #include <unistd.h>
++#include <shlobj.h>
+ 
+ #ifndef RCFILE_NAME
+ #define HOME_RC_NAME  ".nanorc"
+@@ -1734,7 +1735,11 @@ void do_rcfiles(void)
+ 	} else {
+ 		const char *xdgconfdir;
+ 
+-		if (have_nanorc(SYSCONFDIR, "/nanorc"))
++		/* First process the system-wide nanorc, if it exists and is suitable. */
++		const char* allusers = getenv("ALLUSERSPROFILE");
++		if(!allusers)
++			allusers = "C:/Windows";
++		if (have_nanorc(allusers, "/nanorc"))
+ 			parse_one_nanorc();
+ 
+ 		get_homedir();
+diff --git a/src/search.c b/src/search.c
+index 61f81fc3..10ebaa4f 100644
+--- a/src/search.c
++++ b/src/search.c
+@@ -78,6 +78,13 @@ void search_init(bool replacing, bool retain_answer)
+ 	char *thedefault;
+ 		/* What will be searched for when the user types just <Enter>. */
+ 
++#ifdef ENABLE_HISTORIES
++	/* If nothing was searched for yet during this run of nano, but
++	 * there is a search history, take the most recent item. */
++	if (*last_search == '\0' && searchbot->prev != NULL)
++		last_search = mallocstrcpy(last_search, searchbot->prev->data);
++#endif
++
+ 	/* If something was searched for earlier, include it in the prompt. */
+ 	if (*last_search) {
+ 		char *disp = display_string(last_search, 0, COLS / 3, FALSE, FALSE);
+diff --git a/src/text.c b/src/text.c
+index 3180c360..196310d2 100644
+--- a/src/text.c
++++ b/src/text.c
+@@ -2953,6 +2953,7 @@ void do_linter(void)
+ /* Run a manipulation program on the contents of the buffer. */
+ void do_formatter(void)
+ {
++#if defined(HAVE_FORK) && defined(HAVE_WAITPID)
+ 	FILE *stream;
+ 	char *temp_name;
+ 	bool okay = FALSE;
+@@ -2983,6 +2984,7 @@ void do_formatter(void)
+ 
+ 	unlink(temp_name);
+ 	free(temp_name);
++#endif
+ }
+ #endif /* ENABLE_FORMATTER */
+ 
+diff --git a/src/utils.c b/src/utils.c
+index fd743907..f24c3ee2 100644
+--- a/src/utils.c
++++ b/src/utils.c
+@@ -27,21 +27,19 @@
+ #endif
+ #include <string.h>
+ #include <unistd.h>
++#include <shlobj.h>
+ 
+ /* Set global variable `homedir` to the user's home directory.  First try
+  * $HOME, otherwise consult the password database for the current UID. */
+ void get_homedir(void)
+ {
+ 	if (homedir == NULL) {
+-		const char *homenv = getenv("HOME");
++		const char *homenv = getenv("USERPROFILE");
+ 
+ #ifdef HAVE_PWD_H
+ 		/* When $HOME is unset, or when we're root, try the database. */
+-		if (homenv == NULL || geteuid() == ROOT_UID) {
+-			const struct passwd *userage = getpwuid(geteuid());
+-
+-			if (userage)
+-				homenv = userage->pw_dir;
++		if (homenv == NULL || IsUserAnAdmin()) {
++			homenv = getenv("ALLUSERSPROFILE");
+ 		}
+ #endif
+ 
+diff --git a/src/winio.c b/src/winio.c
+index f0bfffe1..d4531d0a 100644
+--- a/src/winio.c
++++ b/src/winio.c
+@@ -30,6 +30,8 @@
+ #ifdef ENABLE_UTF8
+ #include <wchar.h>
+ #endif
++#define WIN32_LEAN_AND_MEAN 1
++#include <windows.h>
+ 
+ #ifdef REVISION
+ #define BRANDING  REVISION
+@@ -268,10 +270,13 @@ void read_keys_from(WINDOW *frame)
+ 	if (!key_buffer)
+ 		reserve_space_for(capacity);
+ 
+-	key_buffer[0] = input;
+-
+ 	nextcodes = key_buffer;
+-	waiting_codes = 1;
++	waiting_codes = 0;
++
++	if (GetAsyncKeyState(VK_LMENU) < 0)
++		key_buffer[waiting_codes++] = ESC_CODE;
++
++	key_buffer[waiting_codes++] = input;
+ 
+ #ifndef NANO_TINY
+ 	/* Cancel the highlighting of a search match, if there still is one. */
+@@ -308,9 +313,12 @@ void read_keys_from(WINDOW *frame)
+ 			break;
+ 
+ 		/* When the keystroke buffer is full, extend it. */
+-		if (waiting_codes == capacity)
++		if (waiting_codes + 1 >= capacity)
+ 			reserve_space_for(2 * capacity);
+ 
++		if (GetAsyncKeyState(VK_LMENU) < 0)
++			key_buffer[waiting_codes++] = ESC_CODE;
++
+ 		key_buffer[waiting_codes++] = input;
+ 	}
+ 
+@@ -1206,13 +1214,18 @@ int parse_kbinput(WINDOW *frame)
+ 		return FOREIGN_SEQUENCE;
+ #endif
+ 
+-#ifdef __linux__
+ 	/* When not running under X, check for the bare arrow keys whether
+ 	 * Shift/Ctrl/Alt are being held together with them. */
+-	unsigned char modifiers = 6;
++	unsigned char modifiers = 0;
+ 
+ 	/* Modifiers are: Alt (8), Ctrl (4), Shift (1). */
+-	if (on_a_vt && !mute_modifiers && ioctl(0, TIOCLINUX, &modifiers) >= 0) {
++	if(GetAsyncKeyState(VK_SHIFT) < 0)
++		modifiers |= 0x01;
++	if(GetAsyncKeyState(VK_CONTROL) < 0)
++		modifiers |= 0x04;
++	if(GetAsyncKeyState(VK_LMENU) < 0)
++		modifiers |= 0x08;
++	if (!mute_modifiers) {
+ #ifndef NANO_TINY
+ 		/* Is Shift being held? */
+ 		if (modifiers & 0x01) {
+@@ -1263,7 +1276,6 @@ int parse_kbinput(WINDOW *frame)
+ 		}
+ #endif
+ 	}
+-#endif /* __linux__ */
+ 
+ 	/* Spurious codes from VTE -- see https://sv.gnu.org/bugs/?64578. */
+ 	if (keycode == mousefocusin || keycode == mousefocusout)
+@@ -1531,12 +1543,6 @@ char *get_verbatim_kbinput(WINDOW *frame, size_t *count)
+ 	if (!ISSET(RAW_SEQUENCES))
+ 		keypad(frame, FALSE);
+ 
+-#ifndef NANO_TINY
+-	/* Turn bracketed-paste mode off. */
+-	printf("\x1B[?2004l");
+-	fflush(stdout);
+-#endif
+-
+ 	linger_after_escape = TRUE;
+ 
+ 	/* Read in a single byte or two escapes. */
+@@ -1554,12 +1560,6 @@ char *get_verbatim_kbinput(WINDOW *frame, size_t *count)
+ 
+ 	linger_after_escape = FALSE;
+ 
+-#ifndef NANO_TINY
+-	/* Turn bracketed-paste mode back on. */
+-	printf("\x1B[?2004h");
+-	fflush(stdout);
+-#endif
+-
+ 	/* Turn flow control characters back on if necessary and turn the
+ 	 * keypad back on if necessary now that we're done. */
+ 	if (ISSET(PRESERVE))
+diff --git a/syntax/c.nanorc b/syntax/c.nanorc
+index 905587c7..9c759d0d 100644
+--- a/syntax/c.nanorc
++++ b/syntax/c.nanorc
+@@ -5,46 +5,48 @@ header "-\*-.*\<C(\+\+)?((;|[[:blank:]]).*)?-\*-"
+ magic "^(C|C\+\+) (source|program)"
+ comment "//"
+ 
+-# Constants.
+-color brightred "\<[[:upper:]_][[:upper:][:digit:]_]*\>"
+-# Labels.
+-color brightmagenta "^[[:blank:]]*[[:alpha:]_][[:alnum:]_]*:[[:blank:]]*$"
+-color normal ":[[:blank:]]*$"
+-
+-# Types and related keywords.
+-color green "\<(bool|char|double|enum|float|int|short|(un)?signed|struct|union|void|((u_?)?int(8|16|32|64)|[[:lower:]][[:lower:]_]*)_t)\>"
+-color green "\<(align(as|of)|auto|const(eval|expr|init)?|extern|inline|register|restrict|sizeof|static(_assert)?|thread_local|typedef|typeof(_unqual)?|volatile)\>"
+-color green "\<(_(Align(as|of)|Atomic|BitInt|Bool|Complex|Decimal(32|64|128)|Generic|Imaginary|Noreturn|Static_assert|Thread_local))\>"
+-color green "\<(class|explicit|final|friend|mutable|namespace|override|private|protected|public|template|this|typename|using|virtual)\>"
+-color green "\<(char(8|16|32)_t|wchar_t|(const|dynamic|reinterpret|static)_cast|decltype|export|import|module|noexcept|requires|typeid)\>"
+-
+-# Flow control.
+-color brightyellow "\<(if|else|for|while|do|switch|case|default)\>"
+-color brightyellow "\<(try|throw|catch|operator|new|delete)\>"
+-color magenta "\<(break|continue|goto|(co_)?return)\>"
+-
+-# Single-quoted stuff (characters, backslash escapes, hex and octal byte codes).
+-color brightmagenta "'([^'\]|\\(["'\abfnrtv]|x[[:xdigit:]]{1,2}|[0-3]?[0-7]{1,2}))'"
+-
+-# Hexadecimal, binary, and boolean values.
+-color pink "\<(0[Xx][[:xdigit:]]['[:xdigit:]]*|0[Bb][01]['01]*|true|false|nullptr)\>"
+-
+-# GCC builtins.
+-color cyan "__attribute__[[:blank:]]*\(\([^)]*\)\)|__(aligned|asm|builtin|hidden|inline|packed|restrict|section|typeof|weak)__"
+-
+-# Strings and names of included files.
+-color brightyellow ""([^"]|\\")*"|#[[:blank:]]*include[[:blank:]]*<[^>]+>"
++# Macros.
++color brightred "\<[A-Z_][0-9A-Z_]+\>"
++
++# Keywords.
++color green "\<(float|double|bool|char|int|short|long|sizeof|typeid|enum|void|auto|static|register|const|volatile|struct|union|typedef|extern|(un)?signed|inline)\>"
++color green "\<(class|namespace|template|public|protected|private|typename|friend|virtual|noexcept|using|mutable|explicit|export|(wchar|char(8|16|32))_t)\>"
++color green "\<(align(as|of)|decltype|constexpr|consteval|thread_local|restrict|_Complex|_Bool|_Imaginary|_Atomic|_Thread_local|_Noreturn|_Align(as|of))\>"
++color green "\<(operator|new|delete|(static|dynamic|const|reinterpret)_cast|static_assert|_Static_assert)\>"
++color brightyellow "\<(for|if|while|do|else|case|default|switch|try|catch)\>"
++color brightmagenta "\<(goto|continue|break|return|throw)\>"
++color yellow "\<(true|false|this|nullptr|__func__)\>"
++
++# Special identifiers.
++color red "\<([[:lower:]][[:lower:]_]*|s?size|ptrdiff|u?int((_(fast|least))?(8|16|32|64)|ptr|max))_t\>"
++color red "\<(std(in|out|err)?|override|final|assert|errno)\>"
++
++# Operators and punctuators.
++color brightcyan "\<(defined|_Pragma|__has_include|_Generic)\>"
++color cyan "[].+*/%=@&|!^~?:,;(){}<>[-]"
++color cyan "\<((and|or|xor|not)(_eq)?|bit(and|or)|compl)\>"
++
++# Literals.
++color yellow "'([^'\]|(\\["'abefnrtv\\]))'" "'\\(([0-3]?[0-7]{1,2}))'" "'\\x[0-9A-Fa-f]{1,2}'"
++color yellow ""(\\.|[^\\"])*?""
++icolor yellow "\<[0-9]+(\.[0-9]*)?(e[+-]?[0-9]+)?(ul{0,2}|l{1,2}u?|f)?\>"
++icolor yellow "\<0x[0-9a-f]+(\.[0-9a-f]*)?(p[+-]?[0-9]+)?(ul{0,2}|l{1,2}u?|f)?\>"
++icolor yellow "\<0b[01]+(ul{0,2}|l{1,2}u?)?\>"
+ 
+ # Preprocessor directives.
+-color brightcyan start="^[[:blank:]]*#[[:blank:]]*((el)?if(n?def)?|error|pragma|warning)\>" end="(\`|[^\])$"
+-color brightcyan "^[[:blank:]]*#[[:blank:]]*((define|else|embed|endif|include(_next)?|line|undef)\>|$)"
++color brightgreen "^[[:space:]]*#[[:space:]]*include(_next)?[[:space:]]+((<[^>]*>)|("[^"]*"))"
++color brightcyan start="^[[:space:]]*#[[:space:]]*(if(n?def)?|elif|define|undef|warning|error|pragma)\>" end="(\`|[^\\])$"
++color brightcyan "^[[:space:]]*#[[:space:]]*(else|endif|include(_next)?)?\>"
++
++# GCC builtins.
++###color cyan "__attribute__[[:space:]]*\(\([^)]*\)\)" "__(aligned|asm|builtin|hidden|inline|packed|restrict|section|typeof|weak)__"
+ 
+ # Comments.
+ color brightblue "//[^"]*$|(^|[[:blank:]])//.*"
+ color brightblue start="/\*" end="\*/"
+ 
+ # Reminders.
+-color brightwhite,yellow "\<(FIXME|TODO|XXX)\>"
++color red,yellow "\<(FIXME|TODO|XXX)\>"
+ 
+ # Trailing whitespace.
+ color ,green "[[:space:]]+$"
