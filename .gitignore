@@ -16,4 +16,5 @@ Thumbs.db
 /sources/
 *.exe
 *.dll
+*.zip
 *-w64-mingw32

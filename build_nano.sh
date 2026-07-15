@@ -8,7 +8,7 @@
 # msvcrt-based mingw cross toolchain that clones nano and ncurses from scratch.
 
 SCRIPTNAME=$(basename "$0")
-SCRIPTVER="1.0.1"
+SCRIPTVER="1.0.2"
 
 # Colors
 YEL='\033[1;33m' # Yellow
@@ -95,7 +95,7 @@ Options:
   -j <count>, --jobs <count>  Override make job count. (default: $JOBS)
   -d, --debug                 Create a debug build (default is release mode).
   -v, --verbose               Show verbose build output.
-  --package                   After a successful build, zip each arch's nano.exe + support files into nano-<arch>.zip (x86_64 becomes nano-x64.zip).
+  -p, --package               After a successful build, zip each arch's nano.exe + support files into nano-<arch>.zip (x86_64 becomes nano-x64.zip).
   --distclean                 Remove build output (out/), keeping fetched sources.
   --clean                     Remove build output and fetched sources (out/ + sources/).
 EOF
@@ -383,7 +383,7 @@ while :; do
     x86_64|x64)
         BUILD_X86_64=1
         ;;
-    --package)
+    -p|--package)
         PACKAGE=1
         ;;
     --)

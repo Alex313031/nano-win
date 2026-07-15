@@ -58,23 +58,6 @@ index ef7fbcb5..5f8d6138 100755
  	getdelim
  	getline
  	getopt-gnu
-diff --git a/package_nano-win.sh b/package_nano-win.sh
-new file mode 100755
-index 00000000..f3695be1
---- /dev/null
-+++ b/package_nano-win.sh
-@@ -0,0 +1,11 @@
-+#!/bin/bash -e
-+
-+_pkgversion="$(git describe --tags || echo "v0.0.0-0-unknown")"
-+_revision="$(git rev-list --count HEAD)"
-+
-+strip -s pkg_{i686,x86_64}-w64-mingw32/bin/nano.exe
-+cp doc/sample.nanorc.in .nanorc
-+7z a -aoa -mmt"$(nproc)" --  \
-+  "nano-win_${_revision}_${_pkgversion}.7z"  \
-+  pkg_{i686,x86_64}-w64-mingw32/{bin/nano.exe,share/{nano,doc}/}  \
-+  .nanorc
 diff --git a/src/files.c b/src/files.c
 index 0cc8b9bc..02a1503b 100644
 --- a/src/files.c

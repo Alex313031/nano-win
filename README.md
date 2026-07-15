@@ -17,13 +17,17 @@ I use [my MinGW fork](https://github.com/Alex313031/mingw-build#readme) to compi
 
  ./build_nano.sh x64 # Make Windows 64 bit build
 
- ./build_nano.sh --package # Package built .exe in .zips
+ ./build_nano.sh x86 x64 # Make both 32 and 64 bit builds
 
- ./build_nano.sh --debug # Make a debug build
+ ./build_nano.sh x86 --package # Build, then package the .exe into a .zip
 
- ./build_nano.sh --verbose # Show verbose build output
+ ./build_nano.sh x86 --debug # Make a debug build (unstripped)
 
- ./build_nano.sh --jobs # Control number of build jobs
+ ./build_nano.sh x86 --verbose # Show verbose build output
+
+ ./build_nano.sh x86 --jobs 8 # Build using 8 make jobs
+
+ ./build_nano.sh --deps # Install build prerequisites (Debian/Ubuntu)
 
  ./build_nano.sh --version # Show script version
 
