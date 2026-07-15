@@ -83,7 +83,7 @@ jobs:
           path: out/nano-*.zip
           if-no-files-found: error
 
-      - name: Upload CI-Build pre-release
+      - name: Upload CI-Build Pre-Release
         # Roll the fixed "CI-Build" prerelease to this commit so it always tracks
         # the latest build under a stable tag -- scripts can fetch the newest zips
         # from a constant URL (.../releases/download/CI-Build/nano-<arch>.zip)
