@@ -102,4 +102,4 @@ jobs:
             --prerelease \
             --target "${{ github.sha }}" \
             --title "CI Build (latest)" \
-            --notes "Automated build of the latest commit ${{ github.sha }}. Always tagged CI-Build. For official releases, see the tagged releases on this page."
+            --notes "Automated build of the latest commit ${{ github.sha }}. For official releases, see the version tagged releases on this page."
