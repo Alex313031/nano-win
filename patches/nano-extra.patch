@@ -1,6 +1,79 @@
 Extra tweaks for the Windows nano build:
+ - Colorful compiled-in interface defaults, no rc files (src/color.c).
  - Richer C/C++ syntax highlighting (syntax/c.nanorc).
+ - Compile in a Windows resource (icon + version info) via windres
+   (src/Makefile.am; nano.rc + nano.ico are copied into src/ by the build).
 
+diff --git a/src/Makefile.am b/src/Makefile.am
+index a678e29..3bb7cff 100644
+--- a/src/Makefile.am
++++ b/src/Makefile.am
+@@ -1,7 +1,7 @@
+ AM_CPPFLAGS = -DLOCALEDIR=\"$(localedir)\" -DSYSCONFDIR=\"$(sysconfdir)\" \
+ 	-I$(top_builddir)/lib -I$(top_srcdir)/lib
+ 
+-CLEANFILES = revision.h
++CLEANFILES = revision.h nano_rc.$(OBJEXT)
+ 
+ if BUILDING_FROM_GIT
+ SOMETHING = "REVISION \"`git describe --tags 2>/dev/null`\""
+@@ -43,7 +43,13 @@ nano_SOURCES = \
+ 		winio.c
+ 
+ nano_LDADD = $(top_builddir)/lib/libgnu.a @LIBINTL@ \
+-		$(GETRANDOM_LIB) $(CLOCK_TIME_LIB) $(LIBTHREAD)
++		$(GETRANDOM_LIB) $(CLOCK_TIME_LIB) $(LIBTHREAD) \
++		nano_rc.$(OBJEXT)
++
++# Windows resource: application icon + version info, compiled with windres.
++# nano.rc and nano.ico are copied into src/ by build_nano.sh before the build.
++nano_rc.$(OBJEXT): $(srcdir)/nano.rc $(srcdir)/nano.ico
++	@host_alias@-windres -I$(srcdir) -O coff -i $(srcdir)/nano.rc -o $@
+ 
+ install-exec-hook:
+ 	cd $(DESTDIR)$(bindir) && rm -f rnano && $(LN_S) nano rnano
+diff --git a/src/color.c b/src/color.c
+index 5e38140..0b67606 100644
+--- a/src/color.c
++++ b/src/color.c
+@@ -54,6 +54,37 @@ void set_interface_colorpairs(void)
+ 			init_pair(index + 1, combo->fg, combo->bg);
+ 			interface_color_pair[index] = COLOR_PAIR(index + 1) | combo->attributes;
+ 			rescind_colors = FALSE;
++		} else if (!rescind_colors) {
++			/* No nanorc set a color for this element, so use a colorful
++			 * compiled-in default: this makes nano's interface colored out
++			 * of the box, without any rc files.  NO_COLOR stays honored,
++			 * as rescind_colors gates this whole branch. */
++			static const struct { short fg, bg; int attr; }
++					fallback[NUMBER_OF_ELEMENTS] = {
++				[TITLE_BAR]     = {COLOR_WHITE,  COLOR_BLUE,    A_BOLD},
++				[LINE_NUMBER]   = {COLOR_YELLOW, THE_DEFAULT,   A_NORMAL},
++				[GUIDE_STRIPE]  = {THE_DEFAULT,  THE_DEFAULT,   A_REVERSE},
++				[SCROLL_BAR]    = {COLOR_GREEN,  THE_DEFAULT,   A_NORMAL},
++				[SELECTED_TEXT] = {COLOR_WHITE,  COLOR_MAGENTA, A_NORMAL},
++				[SPOTLIGHTED]   = {COLOR_BLACK,  COLOR_YELLOW,  A_NORMAL},
++				[MINI_INFOBAR]  = {COLOR_WHITE,  COLOR_BLUE,    A_BOLD},
++				[PROMPT_BAR]    = {COLOR_WHITE,  COLOR_BLUE,    A_BOLD},
++				[STATUS_BAR]    = {COLOR_WHITE,  COLOR_GREEN,   A_BOLD},
++				[ERROR_MESSAGE] = {COLOR_WHITE,  COLOR_RED,     A_BOLD},
++				[KEY_COMBO]     = {COLOR_CYAN,   THE_DEFAULT,   A_BOLD},
++				[FUNCTION_TAG]  = {COLOR_WHITE,  THE_DEFAULT,   A_NORMAL},
++			};
++			short fg = fallback[index].fg;
++			short bg = fallback[index].bg;
++
++			if (!defaults_allowed) {
++				if (fg == THE_DEFAULT)
++					fg = COLOR_WHITE;
++				if (bg == THE_DEFAULT)
++					bg = COLOR_BLACK;
++			}
++			init_pair(index + 1, fg, bg);
++			interface_color_pair[index] = COLOR_PAIR(index + 1) | fallback[index].attr;
+ 		} else {
+ 			if (index == FUNCTION_TAG || index == SCROLL_BAR)
+ 				interface_color_pair[index] = A_NORMAL;
 diff --git a/syntax/c.nanorc b/syntax/c.nanorc
 index 905587c..9c759d0 100644
 --- a/syntax/c.nanorc

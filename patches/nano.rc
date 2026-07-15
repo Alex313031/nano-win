@@ -1,0 +1,52 @@
+// Copyright (c) 2026 Alex313031
+
+// Nano win32 resource script file
+
+#define APSTUDIO_READONLY_SYMBOLS
+
+#define APSTUDIO_HIDDEN_SYMBOLS
+#include <winver.h>
+#undef APSTUDIO_HIDDEN_SYMBOLS
+
+#undef APSTUDIO_READONLY_SYMBOLS
+
+// Embed icon
+101 ICON "nano.ico"
+
+#ifdef _DEBUG
+#define NANO_FILEFLAGS VS_FF_DEBUG
+#else
+#define NANO_FILEFLAGS 0x0L
+#endif
+
+VS_VERSION_INFO VERSIONINFO
+ FILEVERSION    9, 1, 6
+ PRODUCTVERSION 9, 1, 6
+ FILEFLAGSMASK  VS_FFI_FILEFLAGSMASK
+ FILEFLAGS      NANO_FILEFLAGS
+ FILEOS         VOS_NT_WINDOWS32
+ FILETYPE       VFT_APP
+ FILESUBTYPE    VFT2_UNKNOWN
+BEGIN
+    BLOCK "StringFileInfo"
+    BEGIN
+        BLOCK "040904B0" // 0x0409 = U.S. English, 0x04B0 = 1200 = Unicode.
+        BEGIN
+            VALUE "CompanyName",      L"Alex313031"
+            VALUE "FileDescription",  L"Nano text editor"
+            VALUE "FileVersion",      L"9.1.6"
+            VALUE "InternalName",     L"nano"
+            VALUE "LegalCopyright",   L"\251 2026 Alex313031"
+            VALUE "LegalTrademarks",  L"GPL-3 License"
+            VALUE "OriginalFilename", L"nano.exe"
+            VALUE "ProductName",      L"Nano"
+            VALUE "ProductVersion",   L"9.1.6"
+            VALUE "Comments",         L"https://github.com/Alex313031/nano-win"
+        END
+    END
+    BLOCK "VarFileInfo"
+    BEGIN
+        // Must match the language/codepage of the StringFileInfo block above.
+        VALUE "Translation", 0x409, 1200
+    END
+END

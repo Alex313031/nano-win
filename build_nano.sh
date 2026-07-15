@@ -8,7 +8,7 @@
 # msvcrt-based mingw cross toolchain that clones nano and ncurses from scratch.
 
 SCRIPTNAME=$(basename "$0")
-SCRIPTVER="1.0.3"
+SCRIPTVER="1.0.4"
 
 # Colors
 YEL='\033[1;33m' # Yellow
@@ -197,6 +197,11 @@ apply_patches() {
       git -C "${NANO_SRC}" apply --reject "${HERE}/patches/nano-win32.patch"
   execute "Applying nano-extra.patch..." "Failed to apply nano-extra.patch" \
       git -C "${NANO_SRC}" apply --reject "${HERE}/patches/nano-extra.patch"
+  # Drop in the Windows resource sources referenced by src/Makefile.am's windres
+  # rule (added by nano-extra.patch): the app icon and version-info script get
+  # compiled into nano.exe.
+  execute "Adding Windows resource (nano.rc + nano.ico)..." "Failed to copy resource files" \
+      cp -fv "${HERE}/patches/nano.rc" "${HERE}/assets/nano.ico" "${NANO_SRC}/src/"
   # Force a clean release-style version. nano derives its version by running
   # `git describe` in the build tree, but our build dir lives inside $HERE's git
   # repo, so from-git versioning reports the WRONG repo's tag (and would be blank
