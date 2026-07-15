@@ -1,0 +1,83 @@
+Windows 2000 compatibility for ncurses' win32 console driver.
+
+ - Build the driver targeting WINVER=0x0500 (Windows 2000) instead of
+   0x0501 (Windows XP): configure, configure.in and the nc_win32.h.in guard.
+ - Resolve AttachConsole() (an XP+ API) dynamically in lib_win32con.c and
+   skip it when absent, so its static import no longer makes the Windows 2000
+   loader reject the binary.  A console (CUI) app already owns its console on
+   2000, so the attach is unnecessary there anyway.
+
+diff --git a/configure b/configure
+index 48ad381..4e833aa 100755
+--- a/configure
++++ b/configure
+@@ -19088,7 +19088,7 @@ case "$cf_cv_system_name" in
+ 	if test "x$with_named_pipes" = xyes ; then
+ 		CPPFLAGS="$CPPFLAGS -DWINVER=0x0600 -DWIN32_LEAN_AND_MEAN"
+ 	else
+-		CPPFLAGS="$CPPFLAGS -DWINVER=0x0501 -DWIN32_LEAN_AND_MEAN"
++		CPPFLAGS="$CPPFLAGS -DWINVER=0x0500 -D_WIN32_WINNT=0x0500 -DWIN32_LEAN_AND_MEAN"
+ 	fi
+ 
+ echo "$as_me:19094: checking if ssp library is needed" >&5
+diff --git a/configure.in b/configure.in
+index ad79dc9..cd17c34 100644
+--- a/configure.in
++++ b/configure.in
+@@ -1743,7 +1743,7 @@ case "$cf_cv_system_name" in
+ 	if test "x$with_named_pipes" = xyes ; then
+ 		CPPFLAGS="$CPPFLAGS -DWINVER=0x0600 -DWIN32_LEAN_AND_MEAN"
+ 	else
+-		CPPFLAGS="$CPPFLAGS -DWINVER=0x0501 -DWIN32_LEAN_AND_MEAN"
++		CPPFLAGS="$CPPFLAGS -DWINVER=0x0500 -D_WIN32_WINNT=0x0500 -DWIN32_LEAN_AND_MEAN"
+ 	fi
+ 	CF_CHECK_LIBSSP
+ 	;;
+diff --git a/include/nc_win32.h.in b/include/nc_win32.h.in
+index 271e40a..65e150d 100644
+--- a/include/nc_win32.h.in
++++ b/include/nc_win32.h.in
+@@ -72,11 +72,11 @@
+ #else /* !USE_NAMED_PIPES */
+ 
+ #ifdef WINVER
+-#  if WINVER < 0x0501
+-#    error WINVER must at least be 0x0501
++#  if WINVER < 0x0500
++#    error WINVER must at least be 0x0500 (Windows 2000)
+ #  endif
+ #else
+-#  define WINVER 0x0501
++#  define WINVER 0x0500 /* Default to Windows 2000 */
+ #endif
+ 
+ #include <windows.h>
+diff --git a/ncurses/tinfo/lib_win32con.c b/ncurses/tinfo/lib_win32con.c
+index e92841a..6802ee8 100644
+--- a/ncurses/tinfo/lib_win32con.c
++++ b/ncurses/tinfo/lib_win32con.c
+@@ -1190,8 +1190,22 @@ _nc_console_checkinit(bool assumeTermInfo)
+ 	} else {
+ 	    b = AllocConsole();
+ 
+-	    if (!b)
+-		b = AttachConsole(ATTACH_PARENT_PROCESS);
++	    if (!b) {
++		/* AttachConsole() is XP+; Windows 2000 lacks it, and a static
++		 * import of it makes the loader reject the whole binary there.
++		 * Resolve it dynamically and skip it when absent -- a console
++		 * (CUI) process already owns its console on 2000, so the attach
++		 * is unnecessary there. */
++#ifndef ATTACH_PARENT_PROCESS
++#define ATTACH_PARENT_PROCESS ((DWORD)-1)
++#endif
++		typedef BOOL (WINAPI *_nc_attach_console_t)(DWORD);
++		HMODULE _nc_k32 = GetModuleHandleA("kernel32.dll");
++		_nc_attach_console_t _nc_attach_console = _nc_k32 ?
++		    (_nc_attach_console_t) GetProcAddress(_nc_k32, "AttachConsole") : NULL;
++		if (_nc_attach_console)
++		    b = _nc_attach_console(ATTACH_PARENT_PROCESS);
++	    }
+ 
+ 	    WINCONSOLE.inp = GetDirectHandle("CONIN$", FILE_SHARE_READ);
+ 	    WINCONSOLE.out = GetDirectHandle("CONOUT$", FILE_SHARE_WRITE);

@@ -8,7 +8,7 @@
 # msvcrt-based mingw cross toolchain that clones nano and ncurses from scratch.
 
 SCRIPTNAME=$(basename "$0")
-SCRIPTVER="1.0.2"
+SCRIPTVER="1.0.3"
 
 # Colors
 YEL='\033[1;33m' # Yellow
@@ -24,7 +24,7 @@ export HERE=$( cd -- "$( dirname -- "${BASH_SOURCE[0]}" )" &> /dev/null && pwd )
 JOBS=$(getconf _NPROCESSORS_ONLN) # Default to num processors
 
 # Bump ncurses/nano version here. NANO_VER is a vanilla upstream tag (or branch);
-# the Windows support is layered on top from patches/nano-win.patch.
+# the Windows support is layered on top from the patches/ dir.
 NANO_VER="v9.1"
 NCURSES_VER="6.6"
 
@@ -120,7 +120,7 @@ install_deps() {
   # nano clone builds "from git" (configure requires pkg.m4 + msgfmt, autogen.sh
   # needs the autotools); git is needed to clone the source.
   $sudo apt-get install -y \
-        build-essential g++-multilib zip unzip wget tar git \
+        build-essential g++-multilib zip unzip wget tar git patch \
         autoconf automake autopoint pkg-config gettext \
         mingw-w64 mingw-w64-i686-dev mingw-w64-x86-64-dev mingw-w64-tools \
       || error_exit "Failed to install dependencies"
@@ -174,6 +174,12 @@ fetch_ncurses() {
   mkdir -vp "${NCURSES_SRC}"
   execute "Extracting ncurses ${NCURSES_VER}..." "Failed to extract ncurses" \
   tar -xzf "${NCURSES_ARCHIVE}" -C "${NCURSES_SRC}" --strip-components=1
+  # Windows 2000 compatibility: target WINVER=0x0500 and resolve AttachConsole()
+  # dynamically in the win32 console driver (see patches/ncurses-win2k-compat.patch).
+  # ncurses is a plain tarball (not a git repo) nested inside this git repo, so
+  # `git apply` would find the parent repo and skip every file -- use patch(1).
+  execute "Applying ncurses-win2k-compat.patch..." "Failed to apply ncurses-win2k-compat.patch" \
+      patch -N -p1 -d "${NCURSES_SRC}" -i "${HERE}/patches/ncurses-win2k-compat.patch"
 }
 
 # Apply the bundled Windows patch onto the vanilla nano source. The sentinel
@@ -184,9 +190,13 @@ apply_patches() {
     return
   fi
   printf "${GRE}Applying patches...${c0}\n"
-  pushd "${NANO_SRC}"
-  execute "Applying nano-win.patch..." "Failed to apply nano-win.patch" \
-      git apply --reject "${HERE}/patches/nano-win.patch"
+  # nano-src is its own git repo, so git apply resolves it correctly via -C.
+  # nano-win32.patch: Windows/console support; nano-extra.patch: color defaults
+  # and syntax-highlighting customizations.
+  execute "Applying nano-win32.patch..." "Failed to apply nano-win32.patch" \
+      git -C "${NANO_SRC}" apply --reject "${HERE}/patches/nano-win32.patch"
+  execute "Applying nano-extra.patch..." "Failed to apply nano-extra.patch" \
+      git -C "${NANO_SRC}" apply --reject "${HERE}/patches/nano-extra.patch"
   # Force a clean release-style version. nano derives its version by running
   # `git describe` in the build tree, but our build dir lives inside $HERE's git
   # repo, so from-git versioning reports the WRONG repo's tag (and would be blank
@@ -195,7 +205,6 @@ apply_patches() {
   # and also skips configure's from-git pkg-config/gettext requirement.
   rm -f "${NANO_SRC}/roll-a-release.sh"
   touch "${NANO_SRC}/.nano-win-patched"
-  popd
   printf "${GRE}Done patching sources!${c0}\n"
 }
 
@@ -422,9 +431,8 @@ else
   fetch_nano
   apply_patches
   if [ ! -x "${NANO_SRC}/configure" ]; then
-    pushd "${NANO_SRC}"
-    execute "Running autogen.sh..." "autogen.sh failed" ./autogen.sh
-    popd
+    execute "Running autogen.sh..." "autogen.sh failed" \
+        sh -c 'cd "$1" && ./autogen.sh' _ "${NANO_SRC}"
   fi
 
   # Build 32 bit nano.exe
