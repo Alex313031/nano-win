@@ -12,6 +12,12 @@ on:
 permissions:
   contents: write
 
+# Cancel an in-progress run when a newer commit is pushed to the same branch/PR,
+# so a new push supersedes the build already running for the old commit.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 # Update MinGW version here
 env:
   MINGW_BASE_URL: https://github.com/Alex313031/mingw-build/releases/download/20260715

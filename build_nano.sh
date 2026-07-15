@@ -8,7 +8,7 @@
 # msvcrt-based mingw cross toolchain that clones nano and ncurses from scratch.
 
 SCRIPTNAME=$(basename "$0")
-SCRIPTVER="1.1.0"
+SCRIPTVER="1.1.1"
 
 # Colors
 YEL='\033[1;33m' # Yellow
@@ -248,7 +248,7 @@ clean_sources() {
   printf "${YEL}Cleaning sources directory...${c0}\n"
   rm -rf "${NANO_SRC}" &&
   rm -rf "${NCURSES_SRC}" &&
-  rm -rf "${SRC_DIR}/ncurses-*.tar*"
+  rm -rf "${SRC_DIR}/${NCURSES_ARCHIVE}"
   printf "${GRE}Done cleaning ${SRC_DIR} ${c0}\n"
 }
 
@@ -279,6 +279,8 @@ function buildNano() {
   if ! command -v "${_host}-gcc" >/dev/null 2>&1; then
     error_exit "${_host}-gcc not found on \$PATH; add your MinGW toolchain's bin/ dir to PATH first."
   fi
+
+  printf "${GRE}Building Nano for Windows ${arch}...${c0}\n"
 
   # Optimization and debug/release flags. Debug builds also keep symbols by
   # installing with plain `make install` instead of `install-strip`.
@@ -468,6 +470,7 @@ else
   # & the gnulib import in the source tree (needed since we build "from git").
   fetch_nano
   apply_patches
+  rm -rf "${SRC_DIR}/${NCURSES_ARCHIVE}" # Cleanup ncurses tarball now
   if [ ! -x "${NANO_SRC}/configure" ]; then
     execute "Running autogen.sh..." "autogen.sh failed" \
         sh -c 'cd "$1" && ./autogen.sh' _ "${NANO_SRC}"
