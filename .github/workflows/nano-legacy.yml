@@ -1,0 +1,97 @@
+name: Nano Legacy Windows Build
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+
+# checkout needs read; rolling the "continuous" prerelease (below) needs write.
+# Artifact upload uses the runtime token, not these scopes. Pull-request runs
+# only build + upload artifacts (the publish step is skipped for them).
+permissions:
+  contents: write
+
+# Update MinGW version here
+env:
+  MINGW_BASE_URL: https://github.com/Alex313031/mingw-build/releases/download/20260715
+
+jobs:
+  build:
+    name: Build Nano
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y build-essential g++-multilib zip unzip wget tar git patch autoconf automake autopoint pkg-config gettext
+
+      - name: Download MinGW
+        # Use our own MinGW fork for compiling Windows builds
+        run: |
+          wget "${MINGW_BASE_URL}/mingw_gcc_linux_i686.zip"
+          wget "${MINGW_BASE_URL}/mingw_gcc_linux_x64.zip"
+          unzip -o mingw_gcc_linux_i686.zip -d "$HOME"
+          unzip -o mingw_gcc_linux_x64.zip -d "$HOME"
+          rm -f mingw_gcc_linux_i686.zip mingw_gcc_linux_x64.zip
+          # Fail fast if either cross-compiler can't run on this host.
+          "$HOME/i686/bin/i686-w64-mingw32-gcc" --version
+          "$HOME/x64/bin/x86_64-w64-mingw32-gcc" --version
+          echo "$HOME/x64/bin" >> "$GITHUB_PATH"
+          echo "$HOME/i686/bin" >> "$GITHUB_PATH"
+
+      - name: Build for x86 (Windows 2000+)
+        run: ./build_nano.sh x86 --package
+
+      - name: Build for x64 (Windows Server 2003+)
+        run: ./build_nano.sh x64 --package
+
+      - name: Upload build logs on failure
+        # Builds run non-verbose, so on failure the compiler output is only in
+        # the build logs -- publish them so the failure can be diagnosed. The
+        # shared log covers the fetch/patch phase; each arch has its own.
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs-${{ github.run_id }}
+          path: |
+            out/build.log
+            sources/build/*/build.log
+          if-no-files-found: warn
+
+      - name: Grab Git Commit
+        # On pull_request the checkout HEAD is an ephemeral merge commit, so take
+        # the PR head SHA from the event; fall back to github.sha for other events.
+        run: |
+          SHA=${{ github.event.pull_request.head.sha || github.sha }}
+          echo "SHA_SHORT=${SHA:0:6}" >> "$GITHUB_ENV"
+
+      - name: Upload packaged zips
+        uses: actions/upload-artifact@v4
+        with:
+          name: nano_win_${{ env.SHA_SHORT}}
+          path: out/nano-*.zip
+          if-no-files-found: error
+
+      - name: Update continuous prerelease
+        # Roll the "continuous" prerelease to this commit so it always tracks the
+        # latest build. Only on pushes to main (the sole push trigger) -- PRs and
+        # manual dispatch just build + upload artifacts. Official releases are
+        # tagged and published manually. success() is explicit because a custom
+        # if replaces the implicit success() guard.
+        if: success() && github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Delete the old release + tag, then recreate at the current commit so
+          # the tag moves and stale assets are dropped.
+          gh release delete continuous --cleanup-tag --yes || true
+          gh release create continuous out/nano-*.zip \
+            --prerelease \
+            --target "${{ github.sha }}" \
+            --title "Continuous build (latest CI)" \
+            --notes "Automated build of the latest commit ${{ github.sha }}. For official releases, see the tagged releases on this page."
