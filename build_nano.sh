@@ -8,7 +8,7 @@
 # msvcrt-based mingw cross toolchain that clones nano and ncurses from scratch.
 
 SCRIPTNAME=$(basename "$0")
-SCRIPTVER="1.0.4"
+SCRIPTVER="1.1.0"
 
 # Colors
 YEL='\033[1;33m' # Yellow
@@ -33,12 +33,19 @@ NANO_URL="https://github.com/lhmouse/nano-win" # vanilla nano; the v9.1 tag == s
 NCURSES_ARCHIVE="ncurses-${NCURSES_VER}.tar.gz"
 NCURSES_URL="https://invisible-island.net/archives/ncurses/${NCURSES_ARCHIVE}"
 
-OUTDIR="${HERE}/out"
+# Where finished executables/.zips land
+OUT_DIR="${HERE}/out"
+# Where sources are cloned
 SRC_DIR="${HERE}/sources"
+# Where building is performed
+BUILD_DIR="${HERE}/sources/build"
 # Where the vanilla nano tree is cloned and patched. Only this script and the
 # patches/ dir live on the branch; everything below is fetched/built at runtime.
 NANO_SRC="${SRC_DIR}/nano-src"
 NCURSES_SRC="${SRC_DIR}/ncurses-src"
+# Build log: execute() writes command output here instead of the console
+# unless --verbose is given.
+LOG_FILE="${OUT_DIR}/build.log"
 
 # Build config defaults
 IS_DEBUG=false # Default is release mode
@@ -75,7 +82,13 @@ execute() {
   if [ "$info_msg" ]; then
     printf "${CYA} %s ${c0}\n" "$info_msg"
   fi
-  "$@" 2>&1 || error_exit "$error_msg"
+  # In verbose mode, stream command output to the console; otherwise send it to
+  # the build log so the console shows only the progress messages above.
+  if [ "$VERBOSE" == "1" ]; then
+    "$@" 2>&1 || error_exit "$error_msg"
+  else
+    "$@" >>"${LOG_FILE}" 2>&1 || error_exit "$error_msg (see ${LOG_FILE})"
+  fi
 }
 
 show_help() {
@@ -127,11 +140,12 @@ install_deps() {
   printf "${GRE}Done installing dependencies!${c0}\n"
 }
 
-# Zip an already-installed arch's nano.exe plus its runtime support files
-# (syntax highlighting + sample nanorc) into ${HERE}/nano-<arch>.zip.
+# Zip an already-installed arch's nano.exe plus its runtime support files. The
+# staging dir lives under the arch's build dir; the resulting archive is dropped
+# in out/ as nano-<arch>.zip.
 packageNano() {
   local arch="$1" prefix="$2"
-  local stage="${HERE}/nano-${arch}"
+  local stage="${BUILD_DIR}/${arch}/nano-${arch}"
   local zipname="nano-${arch}.zip"
 
   if [ ! -f "${prefix}/bin/nano.exe" ]; then
@@ -139,17 +153,20 @@ packageNano() {
   fi
   printf "${GRE}Packaging nano for arch ${arch}...${c0}\n"
 
-  rm -rf "${stage}" "${HERE}/${zipname}"
+  rm -rf "${stage}" "${OUT_DIR}/${zipname}"
   mkdir -p "${stage}"
-  cp -vf "${prefix}/bin/nano.exe" "${stage}/"
-  # syntax definitions + sample nanorc, if nanorc support was built in
-  [ -d "${prefix}/share/nano" ] && cp -rf "${prefix}/share/nano" "${stage}/"
-  [ -f "${NANO_SRC}/doc/sample.nanorc.in" ] && cp -f "${NANO_SRC}/doc/sample.nanorc.in" "${stage}/sample.nanorc"
+  cp -f "${prefix}/bin/nano.exe" "${stage}/"
+  # Ship sample nanorc
+  [ -f "${NANO_SRC}/doc/sample.nanorc.in" ] && cp -f "${NANO_SRC}/doc/sample.nanorc.in" "${stage}/.nanorc"
+  # Copy custom readme
+  cp -f "${HERE}/assets/readme.crlf" "${stage}/README.txt"
 
-  ( cd "${HERE}" && zip -r -q "${zipname}" "nano-${arch}" ) \
+  # Zip from the arch dir so the archive holds a top-level nano-<arch>/ folder,
+  # but write the .zip itself into out/.
+  ( cd "${BUILD_DIR}/${arch}" && zip -r -q "${OUT_DIR}/${zipname}" "nano-${arch}" ) \
     || error_exit "Failed to create ${zipname}"
   rm -rf "${stage}"
-  printf "${GRE}Packaged ${bold}${HERE}/${zipname}${c0}\n"
+  printf "${GRE}Packaged ${bold}${OUT_DIR}/${zipname}${c0}\n"
 }
 
 # Clone the vanilla nano source at NANO_VER into NANO_SRC (skip if already there).
@@ -171,7 +188,7 @@ fetch_ncurses() {
   cd "${SRC_DIR}"
   execute "Downloading ncurses ${NCURSES_VER}..." "Failed to download ncurses" \
   wget -c "${NCURSES_URL}"
-  mkdir -vp "${NCURSES_SRC}"
+  mkdir -p "${NCURSES_SRC}"
   execute "Extracting ncurses ${NCURSES_VER}..." "Failed to extract ncurses" \
   tar -xzf "${NCURSES_ARCHIVE}" -C "${NCURSES_SRC}" --strip-components=1
   # Windows 2000 compatibility: target WINVER=0x0500 and resolve AttachConsole()
@@ -200,7 +217,7 @@ apply_patches() {
   # Drop in the Windows resource sources referenced by src/Makefile.am's windres
   # rule (added by nano-extra.patch): the app icon and version-info script get
   # compiled into nano.exe.
-  execute "Adding Windows resource (nano.rc + nano.ico)..." "Failed to copy resource files" \
+  execute "Adding Windows resources (nano.rc + nano.ico)..." "Failed to copy resource files" \
       cp -fv "${HERE}/patches/nano.rc" "${HERE}/assets/nano.ico" "${NANO_SRC}/src/"
   # Force a clean release-style version. nano derives its version by running
   # `git describe` in the build tree, but our build dir lives inside $HERE's git
@@ -213,17 +230,25 @@ apply_patches() {
   printf "${GRE}Done patching sources!${c0}\n"
 }
 
-clean_build() {
+clean_output() {
   printf "${YEL}Cleaning output directory...${c0}\n"
-  rm -rf "${OUTDIR}/x86" &&
-  rm -rf "${OUTDIR}/x64"
-  printf "${GRE}Done cleaning ${OUTDIR} ${c0}\n"
+  rm -rf "${OUT_DIR}"/*.exe "${OUT_DIR}"/*.zip
+  printf "${GRE}Done cleaning ${OUT_DIR} ${c0}\n"
+}
+
+clean_build() {
+  printf "${YEL}Cleaning build directories...${c0}\n"
+  rm -rf "${BUILD_DIR}/x86" &&
+  rm -rf "${BUILD_DIR}/x64" &&
+  rm -rf "${OUT_DIR}/build.log"
+  printf "${GRE}Done cleaning ${BUILD_DIR} ${c0}\n"
 }
 
 clean_sources() {
   printf "${YEL}Cleaning sources directory...${c0}\n"
-  rm -rf "${NANO_SRC}"
-  rm -rf "${SRC_DIR}"/ncurses-*
+  rm -rf "${NANO_SRC}" &&
+  rm -rf "${NCURSES_SRC}" &&
+  rm -rf "${SRC_DIR}/ncurses-*.tar*"
   printf "${GRE}Done cleaning ${SRC_DIR} ${c0}\n"
 }
 
@@ -232,18 +257,15 @@ function buildNano() {
   local arch="$1"
 
   local _debug=""
-  local _bits=""
   if [ "$IS_DEBUG" = true ]; then
     _debug="Debug"
   else
     _debug="Release"
   fi
-  if [ "$arch" = "i686" ]; then
-    _bits="x86"
+  if [ "$arch" = "x86" ]; then
     local SIMD_FLAGS="-mfpmath=387 -mmmx -mno-sse -mno-sse2" # Plain x86 without SSE for old CPUs
     local _host="i686-w64-mingw32"
   elif [ "$arch" = "x64" ]; then
-    _bits="x64"
     local SIMD_FLAGS="-mfpmath=sse -msse -mfxsr -msse2" # Plain x64 with SSE2
     local _host="x86_64-w64-mingw32" # Host target triple
   else
@@ -251,10 +273,11 @@ function buildNano() {
   fi
 
   local _build="$(gcc -dumpmachine)"
-  local _prefix="${OUTDIR}/${_bits}/install"
+  # Where make installs everything
+  local _prefix="${BUILD_DIR}/${arch}/install"
 
   if ! command -v "${_host}-gcc" >/dev/null 2>&1; then
-    error_exit "${_host}-gcc not found on \$PATH; add your mingw toolchain's bin/ dir to PATH first, e.g. export PATH=\"\$PWD/../mingw-linux-build/build/linux_gcc/${arch}/bin:\$PATH\""
+    error_exit "${_host}-gcc not found on \$PATH; add your MinGW toolchain's bin/ dir to PATH first."
   fi
 
   # Optimization and debug/release flags. Debug builds also keep symbols by
@@ -307,12 +330,19 @@ function buildNano() {
   fi
   sleep 1
 
-  mkdir -vp "${OUTDIR}/${_bits}"
-  cd "${OUTDIR}/${_bits}"
+  mkdir -p "${BUILD_DIR}/${arch}"
+  cd "${BUILD_DIR}/${arch}"
+
+  # Per-arch build log so a second arch's build doesn't clobber the first one's.
+  # `local` here shadows the global LOG_FILE via dynamic scoping, so execute()
+  # calls made from this function write here; the fetch/patch phase keeps using
+  # the shared ${OUT_DIR}/build.log.
+  local LOG_FILE="${BUILD_DIR}/${arch}/build.log"
+  : > "${LOG_FILE}"
 
   # Build/install ncurses (out-of-tree against the extracted source; absolute
   # source path so it works regardless of this build dir's depth)
-  mkdir -vp "ncurses"
+  mkdir -p "ncurses"
   cd "ncurses"
   execute "Configuring ncurses..." "Failed to configure ncurses!" \
   "${NCURSES_SRC}/configure"  \
@@ -344,11 +374,11 @@ function buildNano() {
   make ${INSTALL_TARGET} $VFLAGS # release: install-strip; debug: plain install
   cd "$HERE"
 
-  cp -fv "${_prefix}/bin/nano.exe" "${OUTDIR}/${_bits}" # copy built .exe
+  cp -f "${_prefix}/bin/nano.exe" "${OUT_DIR}/nano-${arch}.exe" # bare .exe deliverable
 
-  printf "${GRE}Done building Nano ${_debug} ${_bits} ${c0}\n"
+  printf "${GRE}Done building Nano ${_debug} ${arch} ${c0}\n"
 
-  # Optionally zip the result into ${HERE}/nano-${arch}.zip
+  # Optionally zip the result into ${OUT_DIR}/nano-${arch}.zip
   if [ "$PACKAGE" ]; then
     packageNano "$arch" "$_prefix"
   fi
@@ -376,10 +406,12 @@ while :; do
         ;;
     --distclean)
         clean_build
+        clean_output
         exit 0
         ;;
     --clean)
         clean_build
+        clean_output
         clean_sources
         exit 0
         ;;
@@ -391,10 +423,10 @@ while :; do
           arg_error "'--jobs' requires a non-empty option argument"
         fi
         ;;
-    i686|x32|x86)
+    i686|x32|x86|32)
         BUILD_I686=1
         ;;
-    x86_64|x64)
+    x86_64|x64|amd64|64)
         BUILD_X86_64=1
         ;;
     -p|--package)
@@ -426,7 +458,8 @@ else
 
   # Everything is fetched/built under $HERE regardless of the caller's cwd.
   cd "${HERE}"
-  mkdir -vp "${SRC_DIR}"
+  mkdir -p "${OUT_DIR}" "${SRC_DIR}"
+  : > "${LOG_FILE}"  # start a fresh build log (execute() appends to it)
 
   # Fetch ncurses
   fetch_ncurses
@@ -442,7 +475,7 @@ else
 
   # Build 32 bit nano.exe
   if [ "$BUILD_I686" ]; then
-    buildNano i686
+    buildNano x86
   fi
   # Build 64 bit nano.exe
   if [ "$BUILD_X86_64" ]; then
