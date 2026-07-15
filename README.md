@@ -1,4 +1,4 @@
-# Nano for Legacy Windows <img src="./assets/logo.svg" width="38">
+# Nano for Legacy Windows <img src="./assets/logo.png" width="38">
 
 This is a script to build a standalone Windows build of [GNU Nano](https://www.nano-editor.org/),
 that will run on legacy Windows such as Windows 2000, XP, Vista, etc.
