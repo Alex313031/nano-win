@@ -218,7 +218,7 @@ apply_patches() {
   # rule (added by nano-extra.patch): the app icon and version-info script get
   # compiled into nano.exe.
   execute "Adding Windows resources (nano.rc + nano.ico)..." "Failed to copy resource files" \
-      cp -fv "${HERE}/patches/nano.rc" "${HERE}/assets/nano.ico" "${NANO_SRC}/src/"
+      cp -fv "${HERE}/patches/nano.rc" "${HERE}/assets/icon/nano.ico" "${NANO_SRC}/src/"
   # Force a clean release-style version. nano derives its version by running
   # `git describe` in the build tree, but our build dir lives inside $HERE's git
   # repo, so from-git versioning reports the WRONG repo's tag (and would be blank

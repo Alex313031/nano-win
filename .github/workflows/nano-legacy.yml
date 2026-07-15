@@ -95,11 +95,20 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # Build the release notes = a header line + the full commit message
+          # (subject and body). %B is the raw commit message, so you can customize
+          # the notes simply by writing a multi-line commit message.
+          {
+            echo "Automated build of commit ${{ github.sha }}"
+            echo
+            echo "For official releases, see the version-tagged releases on this page."
+            echo "----"
+            git log -1 --format='%B'
+          } > release-notes.md
           # Delete the old release + tag, then recreate at the current commit so
           # the tag moves and stale assets are dropped.
           gh release delete CI-Build --cleanup-tag --yes || true
           gh release create CI-Build out/nano-*.zip \
-            --prerelease \
             --target "${{ github.sha }}" \
             --title "CI Build (latest)" \
-            --notes "Automated build of the latest commit ${{ github.sha }}. For official releases, see the version tagged releases on this page."
+            --notes-file release-notes.md
