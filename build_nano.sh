@@ -323,13 +323,11 @@ function buildNano() {
     local QUIETFLAG="--quiet"
   fi
 
-  # Log final build flags
-  if [ "$VERBOSE" == "1" ]; then
-    printf "${CYA}CFLAGS   ${c0}= ${bold}${CFLAGS} ${NCURSESW_CFLAGS} ${c0}\n"
-    printf "${CYA}CXXFLAGS ${c0}= ${bold}${CXXFLAGS} ${c0}\n"
-    printf "${CYA}LDFLAGS  ${c0}= ${bold}${LDFLAGS} ${c0}\n"
-    printf "${CYA}LIBS     ${c0}= ${bold}${LIBS} ${NCURSESW_LIBS} ${c0}\n"
-  fi
+  # Log final build flags and pause so user can read it
+  printf "${CYA}CFLAGS   ${c0}= ${bold}${CFLAGS} ${NCURSESW_CFLAGS} ${c0}\n"
+  printf "${CYA}CXXFLAGS ${c0}= ${bold}${CXXFLAGS} ${c0}\n"
+  printf "${CYA}LDFLAGS  ${c0}= ${bold}${LDFLAGS} ${c0}\n"
+  printf "${CYA}LIBS     ${c0}= ${bold}${LIBS} ${NCURSESW_LIBS} ${c0}\n"
   sleep 1
 
   mkdir -p "${BUILD_DIR}/${arch}"
