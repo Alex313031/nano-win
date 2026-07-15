@@ -15,7 +15,7 @@ Enhancements
     and from "%ALLUSERSPROFILE%\.nanorc" with elevated privilege.
   + Systemwide nanorc is loaded from "%ALLUSERSPROFILE%\nanorc".
   + Added C++11 keywords and identifiers with special meaning
-    (That is, override and final) in "doc/syntax/c.nanorc".
+    (That is, override and final) in "syntax/c.nanorc".
   + Vim-style locking files have been enabled.
 
 Features Removed
@@ -32,9 +32,9 @@ Changes
   + Standard-conforming `sprintf()` function from mingw-w64.
   + Default to color mode, with custom interface and syntax theme.
   + Build config and `AttachConsole` patch to allow it to run on Win 2K+.
-  + UTF-8 support (This is available only with 64-bit builds
-    and requires the 'Beta: Use Unicode UTF-8 for worldwide language
-    support' option in Windows 10 Region Settings.)
+  + UTF-8 support (This is experimental and requires the
+    "Beta: Use Unicode UTF-8 for worldwide language support"
+    option in Windows 10 Region Settings.)
 
 The original README is as follows:
 ===============================================================================
