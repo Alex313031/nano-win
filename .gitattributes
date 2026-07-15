@@ -1,0 +1,16 @@
+# Set default behavior to automatically normalize line endings.
+* text=auto
+
+# Build system Files
+*.py text
+*.gn text
+*.gni text
+*.mak text eol=lf
+*.diff text eol=lf
+*.patch text eol=lf
+
+# Keep scripts correct
+*.sh text eol=lf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+*.rc text eol=crlf

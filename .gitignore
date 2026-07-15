@@ -1,0 +1,16 @@
+# OS Stuff
+.DS_Store
+.eslintcache
+.directory
+Thumbs.db
+
+# Built Files
+*.a
+*.d
+*.o
+*.lo
+*.obj
+*.res
+*.stamp
+/out/
+nano.exe
