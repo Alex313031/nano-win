@@ -2,7 +2,7 @@ Patches nano to be compatible with Windows
 Originally from https://github.com/lhmouse/nano-win/tree/win
 
 diff --git a/README b/README
-index 734b406d..f2008734 100644
+index 734b406..f200873 100644
 --- a/README
 +++ b/README
 @@ -1,3 +1,41 @@
@@ -48,7 +48,7 @@ index 734b406d..f2008734 100644
            GNU nano -- a simple editor, inspired by Pico
  
 diff --git a/autogen.sh b/autogen.sh
-index ef7fbcb5..5f8d6138 100755
+index ef7fbcb..5f8d613 100755
 --- a/autogen.sh
 +++ b/autogen.sh
 @@ -6,7 +6,9 @@ gnulib_hash="88592a2880cf39a2f597cd0294a90d8dd7faa2df"
@@ -62,18 +62,17 @@ index ef7fbcb5..5f8d6138 100755
  	getline
  	getopt-gnu
 diff --git a/src/files.c b/src/files.c
-index 0cc8b9bc..02a1503b 100644
+index 0cc8b9b..a33a480 100644
 --- a/src/files.c
 +++ b/src/files.c
 @@ -29,7 +29,10 @@
  #endif
  #include <string.h>
  #include <unistd.h>
--#include <sys/wait.h>
-+#define WIN32_LEAN_AND_MEAN 1
-+#include <windows.h>
-+#include <shlobj.h>
-+#include <shlwapi.h>
++#ifndef _WIN32
+ #include <sys/wait.h>
++#endif
++#include "win32.h"
  
  #define RW_FOR_ALL  (S_IRUSR | S_IWUSR | S_IRGRP | S_IWGRP | S_IROTH | S_IWOTH)
  
@@ -218,20 +217,18 @@ index 0cc8b9bc..02a1503b 100644
  			sprintf(dirname, "%s%s", present_path, wasdirname);
  		}
 diff --git a/src/nano.c b/src/nano.c
-index 129ff787..60d05564 100644
+index 129ff78..f356d4c 100644
 --- a/src/nano.c
 +++ b/src/nano.c
-@@ -41,6 +41,9 @@
+@@ -41,6 +41,7 @@
  #ifdef __linux__
  #include <sys/vt.h>
  #endif
-+#define WIN32_LEAN_AND_MEAN 1
-+#include <windows.h>
-+#include <shlobj.h>
++#include "win32.h"
  
  #ifdef ENABLE_MULTIBUFFER
  #define read_them_all  TRUE
-@@ -230,10 +233,6 @@ void restore_terminal(void)
+@@ -230,10 +231,6 @@ void restore_terminal(void)
  {
  	curs_set(1);
  	endwin();
@@ -242,7 +239,7 @@ index 129ff787..60d05564 100644
  	tcsetattr(STDIN_FILENO, TCSANOW, &original_state);
  }
  
-@@ -839,7 +838,7 @@ void restore_handler_for_Ctrl_C(void)
+@@ -839,7 +836,7 @@ void restore_handler_for_Ctrl_C(void)
  /* Reconnect standard input to the tty, and store its state. */
  void reconnect_and_store_state(void)
  {
@@ -251,7 +248,7 @@ index 129ff787..60d05564 100644
  
  	if (thetty < 0 || dup2(thetty, STDIN_FILENO) < 0)
  		die(_("Could not reconnect stdin to keyboard\n"));
-@@ -855,17 +854,21 @@ void reconnect_and_store_state(void)
+@@ -855,17 +852,21 @@ void reconnect_and_store_state(void)
  bool scoop_stdin(void)
  {
  	FILE *stream;
@@ -276,7 +273,7 @@ index 129ff787..60d05564 100644
  
  		terminal_init();
  		doupdate();
-@@ -1229,12 +1232,6 @@ void terminal_init(void)
+@@ -1229,12 +1230,6 @@ void terminal_init(void)
  		enable_flow_control();
  
  	disable_kb_interrupt();
@@ -289,7 +286,7 @@ index 129ff787..60d05564 100644
  }
  
  /* Ask ncurses for a keycode, or assign a default one. */
-@@ -1839,6 +1836,9 @@ int main(int argc, char **argv)
+@@ -1839,6 +1834,9 @@ int main(int argc, char **argv)
  		{NULL, 0, NULL, 0}
  	};
  
@@ -299,7 +296,7 @@ index 129ff787..60d05564 100644
  #ifdef __linux__
  	struct vt_stat dummy;
  
-@@ -1859,7 +1859,7 @@ int main(int argc, char **argv)
+@@ -1859,7 +1857,7 @@ int main(int argc, char **argv)
  #ifdef ENABLE_UTF8
  	/* If setting the locale is successful and it uses UTF-8, we will
  	 * need to use the multibyte functions for text processing. */
@@ -308,7 +305,7 @@ index 129ff787..60d05564 100644
  		using_utf8 = TRUE;
  #else
  	setlocale(LC_ALL, "");
-@@ -2152,13 +2152,8 @@ int main(int argc, char **argv)
+@@ -2152,13 +2150,8 @@ int main(int argc, char **argv)
  		}
  	}
  
@@ -324,7 +321,7 @@ index 129ff787..60d05564 100644
  
  	/* Enter into curses mode.  Abort if this fails. */
  	if (initscr() == NULL)
-@@ -2618,7 +2613,7 @@ int main(int argc, char **argv)
+@@ -2618,7 +2611,7 @@ int main(int argc, char **argv)
  	UNSET(NOREAD_MODE);
  
  	/* Nano is a hands-on editor -- it needs a keyboard. */
@@ -334,14 +331,14 @@ index 129ff787..60d05564 100644
  
  	/* If no filenames were given, or all of them were invalid things like
 diff --git a/src/rcfile.c b/src/rcfile.c
-index 59d932ae..f3cb137b 100644
+index 59d932a..0d746ac 100644
 --- a/src/rcfile.c
 +++ b/src/rcfile.c
 @@ -30,6 +30,7 @@
  #include <glob.h>
  #include <string.h>
  #include <unistd.h>
-+#include <shlobj.h>
++#include "win32.h"
  
  #ifndef RCFILE_NAME
  #define HOME_RC_NAME  ".nanorc"
@@ -359,7 +356,7 @@ index 59d932ae..f3cb137b 100644
  
  		get_homedir();
 diff --git a/src/search.c b/src/search.c
-index 61f81fc3..10ebaa4f 100644
+index 61f81fc..10ebaa4 100644
 --- a/src/search.c
 +++ b/src/search.c
 @@ -78,6 +78,13 @@ void search_init(bool replacing, bool retain_answer)
@@ -377,7 +374,7 @@ index 61f81fc3..10ebaa4f 100644
  	if (*last_search) {
  		char *disp = display_string(last_search, 0, COLS / 3, FALSE, FALSE);
 diff --git a/src/text.c b/src/text.c
-index 3180c360..196310d2 100644
+index 3180c36..196310d 100644
 --- a/src/text.c
 +++ b/src/text.c
 @@ -2953,6 +2953,7 @@ void do_linter(void)
@@ -397,14 +394,14 @@ index 3180c360..196310d2 100644
  #endif /* ENABLE_FORMATTER */
  
 diff --git a/src/utils.c b/src/utils.c
-index fd743907..f24c3ee2 100644
+index fd74390..61d1afc 100644
 --- a/src/utils.c
 +++ b/src/utils.c
 @@ -27,21 +27,19 @@
  #endif
  #include <string.h>
  #include <unistd.h>
-+#include <shlobj.h>
++#include "win32.h"
  
  /* Set global variable `homedir` to the user's home directory.  First try
   * $HOME, otherwise consult the password database for the current UID. */
@@ -426,20 +423,69 @@ index fd743907..f24c3ee2 100644
  		}
  #endif
  
+diff --git a/src/win32.h b/src/win32.h
+new file mode 100644
+index 0000000..69962b5
+--- /dev/null
++++ b/src/win32.h
+@@ -0,0 +1,44 @@
++#ifndef NANO_WIN32_H_
++#define NANO_WIN32_H_
++
++// Header to be used in place of <windows.h> for all Nano Win32 support code
++// to ensure consistency and legacy Windows support.
++
++#if defined(_WIN32) && !defined(__linux__)
++
++#ifndef UNICODE
++ #define UNICODE
++#endif
++
++#ifndef _UNICODE
++ #define _UNICODE
++#endif
++
++#include "winsdkver.h"
++
++#ifndef _WIN32_WINNT
++ #define _WIN32_WINNT 0x0500 // Windows 2000
++#endif
++
++#ifndef WINVER
++ #define WINVER 0x0500 // Same as _WIN32_WINNT above
++#endif
++
++#ifndef _WIN32_IE
++ #define _WIN32_IE 0x0501 // Minimum Internet Explorer version for common controls
++#endif
++
++#include "sdkddkver.h"
++
++#ifndef WIN32_LEAN_AND_MEAN
++ #define WIN32_LEAN_AND_MEAN 1
++#endif
++
++#include <windows.h>
++#include <shlobj.h>
++#include <shlwapi.h>
++#include <tchar.h>
++
++#endif // _WIN32 && !__linux__
++
++#endif // NANO_WIN32_H_
 diff --git a/src/winio.c b/src/winio.c
-index f0bfffe1..d4531d0a 100644
+index f0bfffe..eab67af 100644
 --- a/src/winio.c
 +++ b/src/winio.c
-@@ -30,6 +30,8 @@
+@@ -30,6 +30,7 @@
  #ifdef ENABLE_UTF8
  #include <wchar.h>
  #endif
-+#define WIN32_LEAN_AND_MEAN 1
-+#include <windows.h>
++#include "win32.h"
  
  #ifdef REVISION
  #define BRANDING  REVISION
-@@ -268,10 +270,13 @@ void read_keys_from(WINDOW *frame)
+@@ -268,10 +269,13 @@ void read_keys_from(WINDOW *frame)
  	if (!key_buffer)
  		reserve_space_for(capacity);
  
@@ -456,7 +502,7 @@ index f0bfffe1..d4531d0a 100644
  
  #ifndef NANO_TINY
  	/* Cancel the highlighting of a search match, if there still is one. */
-@@ -308,9 +313,12 @@ void read_keys_from(WINDOW *frame)
+@@ -308,9 +312,12 @@ void read_keys_from(WINDOW *frame)
  			break;
  
  		/* When the keystroke buffer is full, extend it. */
@@ -470,7 +516,7 @@ index f0bfffe1..d4531d0a 100644
  		key_buffer[waiting_codes++] = input;
  	}
  
-@@ -1206,13 +1214,18 @@ int parse_kbinput(WINDOW *frame)
+@@ -1206,13 +1213,18 @@ int parse_kbinput(WINDOW *frame)
  		return FOREIGN_SEQUENCE;
  #endif
  
@@ -492,7 +538,7 @@ index f0bfffe1..d4531d0a 100644
  #ifndef NANO_TINY
  		/* Is Shift being held? */
  		if (modifiers & 0x01) {
-@@ -1263,7 +1276,6 @@ int parse_kbinput(WINDOW *frame)
+@@ -1263,7 +1275,6 @@ int parse_kbinput(WINDOW *frame)
  		}
  #endif
  	}
@@ -500,7 +546,7 @@ index f0bfffe1..d4531d0a 100644
  
  	/* Spurious codes from VTE -- see https://sv.gnu.org/bugs/?64578. */
  	if (keycode == mousefocusin || keycode == mousefocusout)
-@@ -1531,12 +1543,6 @@ char *get_verbatim_kbinput(WINDOW *frame, size_t *count)
+@@ -1531,12 +1542,6 @@ char *get_verbatim_kbinput(WINDOW *frame, size_t *count)
  	if (!ISSET(RAW_SEQUENCES))
  		keypad(frame, FALSE);
  
@@ -513,7 +559,7 @@ index f0bfffe1..d4531d0a 100644
  	linger_after_escape = TRUE;
  
  	/* Read in a single byte or two escapes. */
-@@ -1554,12 +1560,6 @@ char *get_verbatim_kbinput(WINDOW *frame, size_t *count)
+@@ -1554,12 +1559,6 @@ char *get_verbatim_kbinput(WINDOW *frame, size_t *count)
  
  	linger_after_escape = FALSE;
  
