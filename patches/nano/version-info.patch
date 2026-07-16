@@ -1,0 +1,159 @@
+Add version.c / version.h and wire them in: version macros consumed by nano.rc,
+plus runtime getters for the nano version (config.h) and the host OS version --
+the latter appended to `nano --version`. Compiled into nano via nano_SOURCES.
+
+diff --git a/src/Makefile.am b/src/Makefile.am
+index 66283dd..b7bb65a 100644
+--- a/src/Makefile.am
++++ b/src/Makefile.am
+@@ -40,7 +40,8 @@ nano_SOURCES = \
+ 		search.c \
+ 		text.c \
+ 		utils.c \
+-		winio.c
++		winio.c \
++		version.c
+ 
+ nano_LDADD = $(top_builddir)/lib/libgnu.a @LIBINTL@ \
+ 		$(GETRANDOM_LIB) $(CLOCK_TIME_LIB) $(LIBTHREAD) \
+diff --git a/src/nano.c b/src/nano.c
+index f356d4c..068fae5 100644
+--- a/src/nano.c
++++ b/src/nano.c
+@@ -42,6 +42,7 @@
+ #include <sys/vt.h>
+ #endif
+ #include "win32.h"
++#include "version.h"
+ 
+ #ifdef ENABLE_MULTIBUFFER
+ #define read_them_all  TRUE
+@@ -784,6 +785,7 @@ void version(void)
+ 	printf(" --disable-utf8");
+ #endif
+ 	printf("\n");
++	printf(_(" Running on %s\n"), nano_get_os_version());
+ }
+ 
+ #ifdef ENABLE_COLOR
+diff --git a/src/version.c b/src/version.c
+new file mode 100644
+index 0000000..4984221
+--- /dev/null
++++ b/src/version.c
+@@ -0,0 +1,64 @@
++// Version/host-info helpers for the Windows build. Declared in version.h.
++
++#ifdef HAVE_CONFIG_H
++#include <config.h>
++#endif
++
++#if defined(_WIN32)
++# include "win32.h"   // windows.h + legacy-Windows version guards
++#elif defined(__linux__)
++# include <sys/utsname.h>
++#endif
++
++#include <stdio.h>   // snprintf
++
++#include "version.h"
++
++// nano's version string. Prefer config.h's PACKAGE_STRING ("GNU nano 9.1",
++// straight from configure.ac's AC_INIT) so the reported version always matches
++// the build; fall back to the numeric macros in version.h if config.h is absent.
++const char *nano_get_version(void)
++{
++#ifdef PACKAGE_STRING
++	return PACKAGE_STRING;
++#else
++	return "GNU nano " NANO_VER_STR;
++#endif
++}
++
++// Host Windows version as "Windows <major>.<minor>.<build>". GetVersionExW reports
++// the true version on the systems this fork targets (2000 .. 7); the compatibility
++// shim that lies about the version only kicks in on Windows 8.1+. Cached in a
++// static buffer (nano's Win32 code is single-threaded).
++const char *nano_get_os_version(void)
++{
++	static char buf[256];  // large enough for uname(2)'s worst case, too
++
++	if (buf[0] == '\0') {
++#if defined(_WIN32)
++		OSVERSIONINFOW ovi;
++
++		SecureZeroMemory(&ovi, sizeof ovi);
++		ovi.dwOSVersionInfoSize = sizeof ovi;
++
++		if (GetVersionExW(&ovi))
++			snprintf(buf, sizeof buf, "Windows %lu.%lu.%lu",
++					(unsigned long)ovi.dwMajorVersion,
++					(unsigned long)ovi.dwMinorVersion,
++					(unsigned long)ovi.dwBuildNumber);
++		else
++			snprintf(buf, sizeof buf, "Windows (unknown)");
++#elif defined(__linux__)
++		struct utsname u;
++
++		if (uname(&u) == 0)
++			snprintf(buf, sizeof buf, "%s %s (%s)", u.sysname, u.release, u.machine);
++		else
++			snprintf(buf, sizeof buf, "Unknown Linux");
++#else
++		snprintf(buf, sizeof buf, "Unknown OS");
++#endif
++	}
++
++	return buf;
++}
+diff --git a/src/version.h b/src/version.h
+new file mode 100644
+index 0000000..98001c4
+--- /dev/null
++++ b/src/version.h
+@@ -0,0 +1,45 @@
++#ifndef NANO_VERSION_H_
++#define NANO_VERSION_H_
++
++// Single source of truth for the version baked into nano.exe's Windows resource
++// (FILEVERSION / VERSIONINFO strings, see nano.rc) and returned by the getters
++// below. Bump these to re-version the build; keep MAJOR.MINOR in step with nano's
++// own version (configure.ac AC_INIT -> config.h VERSION / PACKAGE_STRING).
++#define NANO_MAJOR  9
++#define NANO_MINOR  1
++#define NANO_PATCH  7
++#define NANO_BUILD  0
++
++// Stringize helpers (two levels so the numeric macros above expand first).
++#ifndef NANO_STR_
++#define NANO_STR_(x)  #x
++#define NANO_STRINGIZE(x)  NANO_STR_(x)
++#endif
++
++// Comma-separated form for the .rc's FILEVERSION / PRODUCTVERSION fields.
++#define NANO_VER_COMMA  NANO_MAJOR, NANO_MINOR, NANO_PATCH, NANO_BUILD
++
++// Dotted "major.minor.patch" string for the VERSIONINFO StringFileInfo values.
++// windres stores VERSIONINFO strings as UTF-16 regardless, so no L"" prefix here.
++#define NANO_VER_STR \
++	NANO_STRINGIZE(NANO_MAJOR) "." NANO_STRINGIZE(NANO_MINOR) "." NANO_STRINGIZE(NANO_PATCH)
++
++#ifndef RC_INVOKED
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++// Human-readable nano version, e.g. "GNU nano, version 9.1" (from config.h).
++const char *nano_get_version(void);
++
++// Host OS version, e.g. "Windows 5.1.2600" or "Linux 6.17.0-35-generic (x86_64)" (queried at runtime).
++const char *nano_get_os_version(void);
++
++#ifdef __cplusplus
++}
++#endif
++
++#endif // !RC_INVOKED
++
++#endif // NANO_VERSION_H_

@@ -24,7 +24,7 @@ index a678e29..3bb7cff 100644
 +		nano_rc.$(OBJEXT)
 +
 +# Windows resource: application icon + version info, compiled with windres.
-+# nano.rc and nano.ico are copied into src/ by build_nano.sh before the build.
++# nano.rc is added by this patch; the binary nano.ico is copied into src/ by build_nano.sh.
 +nano_rc.$(OBJEXT): $(srcdir)/nano.rc $(srcdir)/nano.ico
 +	@host_alias@-windres -I$(srcdir) -O coff -i $(srcdir)/nano.rc -o $@
  
@@ -32,7 +32,7 @@ index a678e29..3bb7cff 100644
  	cd $(DESTDIR)$(bindir) && rm -f rnano && $(LN_S) nano rnano
 diff --git a/src/nano.rc b/src/nano.rc
 new file mode 100644
-index 0000000..b52d502
+index 0000000..083360f
 --- /dev/null
 +++ b/src/nano.rc
 @@ -0,0 +1,57 @@
@@ -63,8 +63,8 @@ index 0000000..b52d502
 +#endif
 +
 +VS_VERSION_INFO VERSIONINFO
-+ FILEVERSION    9, 1, 6
-+ PRODUCTVERSION 9, 1, 6
++ FILEVERSION    NANO_VER_COMMA
++ PRODUCTVERSION NANO_VER_COMMA
 + FILEFLAGSMASK  VS_FFI_FILEFLAGSMASK
 + FILEFLAGS      NANO_FILEFLAGS
 + FILEOS         VOS_NT_WINDOWS32
@@ -77,13 +77,13 @@ index 0000000..b52d502
 +        BEGIN
 +            VALUE "CompanyName",      L"Alex313031"
 +            VALUE "FileDescription",  L"Nano text editor"
-+            VALUE "FileVersion",      L"9.1.6"
++            VALUE "FileVersion",      NANO_VER_STR
 +            VALUE "InternalName",     L"nano"
 +            VALUE "LegalCopyright",   L"\251 2026 Alex313031"
 +            VALUE "LegalTrademarks",  L"GPL-3 License"
 +            VALUE "OriginalFilename", L"nano.exe"
 +            VALUE "ProductName",      L"Nano"
-+            VALUE "ProductVersion",   L"9.1.6"
++            VALUE "ProductVersion",   NANO_VER_STR
 +            VALUE "Comments",         L"https://github.com/Alex313031/nano-win"
 +        END
 +    END

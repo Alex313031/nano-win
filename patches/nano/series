@@ -1,6 +1,7 @@
 nano-win32.patch
 nanorc.patch
 rc-icon.patch
+version-info.patch
 linenumbers-default.patch
 default-crlf.patch
 interface.patch

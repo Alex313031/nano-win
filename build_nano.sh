@@ -8,7 +8,7 @@
 # mingw cross toolchain, fetching nano (git) and ncurses (tarball) from scratch.
 
 SCRIPTNAME=$(basename "$0")
-SCRIPTVER="1.1.3"
+SCRIPTVER="1.1.4"
 
 # Colors
 YEL='\033[1;33m' # Yellow
@@ -372,6 +372,13 @@ function buildNano() {
   local LOG_FILE="${BUILD_DIR}/${arch}/build_${arch}.log"
   : > "${LOG_FILE}"
 
+  local NCURSES_FEATURES="--enable-widec --enable-sp-funcs --enable-termcap --enable-term-driver --enable-interop"
+  if [ "$IS_DEBUG" = true ]; then
+    NCURSES_FEATURES+=" --with-debug"
+  else
+    NCURSES_FEATURES+=" --without-debug"
+  fi
+
   # Build/install ncurses (out-of-tree against the extracted source; absolute
   # source path so it works regardless of this build dir's depth)
   mkdir -p "ncurses" && cd "ncurses"
@@ -379,9 +386,9 @@ function buildNano() {
   "${NCURSES_SRC}/configure"  \
     --build="${_build}" --host="${_host}" --prefix="${_prefix}"  \
     --disable-dependency-tracking  \
-    --enable-{widec,sp-funcs,termcap,term-driver,interop}  \
+    $NCURSES_FEATURES \
     --disable-{shared,database,rpath,home-terminfo,db-install,getcap}  \
-    --without-{ada,cxx-binding,manpages,pthread,debug,tests,libtool,progs} \
+    --without-{ada,cxx-binding,manpages,pthread,tests,libtool,progs} \
     $QUIETFLAG
   execute "Building ncurses..." "ncurses build failed." \
   make -j $JOBS $VFLAGS
@@ -392,12 +399,20 @@ function buildNano() {
   # Nano feature set: a normal build enables color/utf8/nanorc; --tiny makes a
   # minimal build via --enable-tiny (which also drops this fork's enhancements,
   # since they live under the NANO_TINY/ENABLE_* guards).
-  local NANO_FEATURES="--enable-color --enable-utf8 --enable-nanorc"
-  [ "$IS_TINY" = true ] && NANO_FEATURES="--enable-tiny"
+  # Always enable these
+  local NANO_FEATURES="--enable-utf8 --enable-nanorc --enable-linenumbers --enable-wrapping --enable-operatingdir"
+  if [ "$IS_TINY" = true ]; then
+    NANO_FEATURES+=" --enable-tiny" # Tiny build + some enhancements
+  else
+    NANO_FEATURES+=" --enable-color --enable-help --enable-mouse --enable-browser --enable-extra"
+  fi
+  if [ "$IS_DEBUG" = true ]; then
+    NANO_FEATURES+=" --enable-debug"
+  fi
 
   # Build nano itself (out-of-tree against the cloned+patched source in NANO_SRC)
   mkdir -p "nano" && cd "nano"
-  execute "Configuring nano..." "Failed to configure nano!" \
+  execute "Configuring nano with ${NANO_FEATURES}" "Failed to configure nano!" \
   "${NANO_SRC}/configure"  \
     --build="${_build}" --host="${_host}" --prefix="${_prefix}"  \
     --disable-dependency-tracking  \
