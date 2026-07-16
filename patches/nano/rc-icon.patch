@@ -1,0 +1,31 @@
+Compile in a Windows resource: icon + version info via windres
+(src/Makefile.am; nano.rc + nano.ico copied into src/ by the build).
+
+diff --git a/src/Makefile.am b/src/Makefile.am
+index a678e29..3bb7cff 100644
+--- a/src/Makefile.am
++++ b/src/Makefile.am
+@@ -1,7 +1,7 @@
+ AM_CPPFLAGS = -DLOCALEDIR=\"$(localedir)\" -DSYSCONFDIR=\"$(sysconfdir)\" \
+ 	-I$(top_builddir)/lib -I$(top_srcdir)/lib
+ 
+-CLEANFILES = revision.h
++CLEANFILES = revision.h nano_rc.$(OBJEXT)
+ 
+ if BUILDING_FROM_GIT
+ SOMETHING = "REVISION \"`git describe --tags 2>/dev/null`\""
+@@ -43,7 +43,13 @@ nano_SOURCES = \
+ 		winio.c
+ 
+ nano_LDADD = $(top_builddir)/lib/libgnu.a @LIBINTL@ \
+-		$(GETRANDOM_LIB) $(CLOCK_TIME_LIB) $(LIBTHREAD)
++		$(GETRANDOM_LIB) $(CLOCK_TIME_LIB) $(LIBTHREAD) \
++		nano_rc.$(OBJEXT)
++
++# Windows resource: application icon + version info, compiled with windres.
++# nano.rc and nano.ico are copied into src/ by build_nano.sh before the build.
++nano_rc.$(OBJEXT): $(srcdir)/nano.rc $(srcdir)/nano.ico
++	@host_alias@-windres -I$(srcdir) -O coff -i $(srcdir)/nano.rc -o $@
+ 
+ install-exec-hook:
+ 	cd $(DESTDIR)$(bindir) && rm -f rnano && $(LN_S) nano rnano

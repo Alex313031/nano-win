@@ -1,0 +1,19 @@
+Makes line numbers show by default.
+Use `unset linenumbers` in .nanorc to disable.
+
+diff --git a/src/nano.c b/src/nano.c
+index 60d0556..737b710 100644
+--- a/src/nano.c
++++ b/src/nano.c
+@@ -1873,6 +1873,11 @@ int main(int argc, char **argv)
+ 	/* Set a sensible default, different from what Pico does. */
+ 	SET(NO_WRAP);
+ 
++#ifdef ENABLE_LINENUMBERS
++	/* Show line numbers by default (override with "unset linenumbers"). */
++	SET(LINE_NUMBERS);
++#endif
++
+ 	/* If the executable's name starts with 'r', activate restricted mode. */
+ 	if (*(tail(argv[0])) == 'r')
+ 		SET(RESTRICTED);

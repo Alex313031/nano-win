@@ -65,8 +65,8 @@ jobs:
         with:
           name: build-logs-${{ github.run_id }}
           path: |
-            out/build.log
-            sources/build/*/build.log
+            _build/build/build.log
+            _build/build/*/build_*.log
           if-no-files-found: warn
 
       - name: Fetch Git Commit
@@ -80,14 +80,14 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: nano_win_${{ env.SHA_SHORT}}
-          path: out/nano-*.zip
+          path: out/nano_*.zip
           if-no-files-found: error
 
       - name: Upload CI-Build Pre-Release
         # Roll the fixed "CI-Build" prerelease to this commit so it always tracks
         # the latest build under a stable tag -- scripts can fetch the newest zips
-        # from a constant URL (.../releases/download/CI-Build/nano-<arch>.zip)
-        # without knowing the commit hash. Only on pushes to main (the sole push
+        # from a constant URL (.../releases/download/CI-Build/nano_win32.zip or
+        # nano_win64.zip) without knowing the commit hash. Only on pushes to main (the sole push
         # trigger) -- PRs and manual dispatch just build + upload artifacts.
         # Official releases are tagged and published manually. success() is
         # explicit because a custom if replaces the implicit success() guard.
@@ -108,7 +108,7 @@ jobs:
           # Delete the old release + tag, then recreate at the current commit so
           # the tag moves and stale assets are dropped.
           gh release delete CI-Build --cleanup-tag --yes || true
-          gh release create CI-Build out/nano-*.zip \
+          gh release create CI-Build out/nano_*.zip \
             --target "${{ github.sha }}" \
             --title "CI Build (latest)" \
             --notes-file release-notes.md

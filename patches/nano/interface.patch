@@ -1,0 +1,44 @@
+Colorful compiled-in interface defaults, without using nanorc files.
+
+diff --git a/src/color.c b/src/color.c
+index 5e38140..0b67606 100644
+--- a/src/color.c
++++ b/src/color.c
+@@ -54,6 +54,37 @@ void set_interface_colorpairs(void)
+ 			init_pair(index + 1, combo->fg, combo->bg);
+ 			interface_color_pair[index] = COLOR_PAIR(index + 1) | combo->attributes;
+ 			rescind_colors = FALSE;
++		} else if (!rescind_colors) {
++			/* No nanorc set a color for this element, so use a colorful
++			 * compiled-in default: this makes nano's interface colored out
++			 * of the box, without any rc files.  NO_COLOR stays honored,
++			 * as rescind_colors gates this whole branch. */
++			static const struct { short fg, bg; int attr; }
++					fallback[NUMBER_OF_ELEMENTS] = {
++				[TITLE_BAR]     = {COLOR_WHITE,  COLOR_BLUE,    A_BOLD},
++				[LINE_NUMBER]   = {COLOR_YELLOW, THE_DEFAULT,   A_NORMAL},
++				[GUIDE_STRIPE]  = {THE_DEFAULT,  THE_DEFAULT,   A_REVERSE},
++				[SCROLL_BAR]    = {COLOR_GREEN,  THE_DEFAULT,   A_NORMAL},
++				[SELECTED_TEXT] = {COLOR_WHITE,  COLOR_CYAN,    A_NORMAL},
++				[SPOTLIGHTED]   = {COLOR_BLACK,  COLOR_YELLOW,  A_NORMAL},
++				[MINI_INFOBAR]  = {COLOR_WHITE,  COLOR_MAGENTA, A_BOLD},
++				[PROMPT_BAR]    = {COLOR_WHITE,  COLOR_GREEN,   A_BOLD},
++				[STATUS_BAR]    = {COLOR_WHITE,  COLOR_GREEN,   A_BOLD},
++				[ERROR_MESSAGE] = {COLOR_WHITE,  COLOR_RED,     A_BOLD},
++				[KEY_COMBO]     = {COLOR_CYAN,   THE_DEFAULT,   A_BOLD},
++				[FUNCTION_TAG]  = {COLOR_WHITE,  THE_DEFAULT,   A_NORMAL},
++			};
++			short fg = fallback[index].fg;
++			short bg = fallback[index].bg;
++
++			if (!defaults_allowed) {
++				if (fg == THE_DEFAULT)
++					fg = COLOR_WHITE;
++				if (bg == THE_DEFAULT)
++					bg = COLOR_BLACK;
++			}
++			init_pair(index + 1, fg, bg);
++			interface_color_pair[index] = COLOR_PAIR(index + 1) | fallback[index].attr;
+ 		} else {
+ 			if (index == FUNCTION_TAG || index == SCROLL_BAR)
+ 				interface_color_pair[index] = A_NORMAL;

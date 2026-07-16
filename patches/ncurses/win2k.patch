@@ -1,0 +1,36 @@
+Windows 2000+ compatibility for ncurses
+
+Resolve AttachConsole() (an XP+ API) dynamically in lib_win32con.c and
+skip it when absent, so its static import no longer makes the Windows 2000
+loader reject the binary. A console (CUI) app already owns its console on Win2K,
+so the attach is unnecessary there anyway.
+
+diff --git a/ncurses/tinfo/lib_win32con.c b/ncurses/tinfo/lib_win32con.c
+index e92841a..6802ee8 100644
+--- a/ncurses/tinfo/lib_win32con.c
++++ b/ncurses/tinfo/lib_win32con.c
+@@ -1190,8 +1190,22 @@ _nc_console_checkinit(bool assumeTermInfo)
+ 	} else {
+ 	    b = AllocConsole();
+ 
+-	    if (!b)
+-		b = AttachConsole(ATTACH_PARENT_PROCESS);
++	    if (!b) {
++		/* AttachConsole() is XP+; Windows 2000 lacks it, and a static
++		 * import of it makes the loader reject the whole binary there.
++		 * Resolve it dynamically and skip it when absent -- a console
++		 * (CUI) process already owns its console on 2000, so the attach
++		 * is unnecessary there. */
++#ifndef ATTACH_PARENT_PROCESS
++#define ATTACH_PARENT_PROCESS ((DWORD)-1)
++#endif
++		typedef BOOL (WINAPI *_nc_attach_console_t)(DWORD);
++		HMODULE _nc_k32 = GetModuleHandleA("kernel32.dll");
++		_nc_attach_console_t _nc_attach_console = _nc_k32 ?
++		    (_nc_attach_console_t) GetProcAddress(_nc_k32, "AttachConsole") : NULL;
++		if (_nc_attach_console)
++		    b = _nc_attach_console(ATTACH_PARENT_PROCESS);
++	    }
+ 
+ 	    WINCONSOLE.inp = GetDirectHandle("CONIN$", FILE_SHARE_READ);
+ 	    WINCONSOLE.out = GetDirectHandle("CONOUT$", FILE_SHARE_WRITE);

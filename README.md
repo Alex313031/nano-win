@@ -25,6 +25,9 @@ There is a GitHub runner [CI build](./.github/workflows/nano-legacy.yml) that us
 This repo consists of a [build script](./build_nano.sh) and [collection of patches](./patches/).  
 The [assets](./assets) dir contains images and text files for readmes or packaging.
 
+The script downloads sources to `_build/src/`, and builds nano + ncurses in a per-arch named dir in `_build/build/$arch`.
+Finally, it puts the finished .exe or .zip (if applicable) into `out/`.
+
 ```bash
  ./build_nano.sh x86 # Make Windows 32 bit build
 
@@ -40,6 +43,8 @@ The [assets](./assets) dir contains images and text files for readmes or packagi
 
  ./build_nano.sh x86 --jobs 8 # Build using 8 make jobs
 
+ ./build_nano.sh x86 --clean # Clean source and output dirs
+
  ./build_nano.sh --deps # Install build prerequisites (Debian/Ubuntu)
 
  ./build_nano.sh --version # Show script version
@@ -47,6 +52,5 @@ The [assets](./assets) dir contains images and text files for readmes or packagi
  ./build_nano.sh --help # See all build options
 ```
 
-### License
-
-This repo is licensed under the [GPL-3 License](./LICENSE.md).
+## License
+This repo is licensed under the [GPL-3 License](./LICENSE.md), as is the original nano.

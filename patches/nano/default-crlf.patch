@@ -1,0 +1,21 @@
+Makes new files default to DOS/CRLF line endings.
+
+diff --git a/src/files.c b/src/files.c
+index 02a1503..0badd86 100644
+--- a/src/files.c
++++ b/src/files.c
+@@ -465,6 +465,14 @@ bool open_buffer(const char *filename, bool new_one)
+ #endif
+ 	}
+ 
++#if !defined(NANO_TINY) && defined(_WIN32)
++	/* A brand-new file (descriptor 0 means nothing was read from disk) defaults
++	 * to DOS/CRLF line endings, so that classic Windows tools such as Notepad
++	 * read it correctly.  Files opened from disk keep their detected format. */
++	if (descriptor == 0 && new_one)
++		openfile->fmt = DOS_FILE;
++#endif
++
+ 	/* For a new buffer, store filename and put cursor at start of buffer. */
+ 	if (descriptor >= 0 && new_one) {
+ 		openfile->filename = mallocstrcpy(openfile->filename, realname);

@@ -3,12 +3,12 @@
 # Copyright (c) 2026 Alex313031.
 
 # Build a standalone Windows nano.exe that will run on legacy versions of Windows
-# (Windows 2000, XP, Server 2003, and Vista, Win7+ work upstream)
-# Unlike build_nano-win.sh this does NOT use MSYS2: it is a custom legacy-Windows compatible
-# msvcrt-based mingw cross toolchain that clones nano and ncurses from scratch.
+# (Windows 2000, XP, Server 2003, and Vista; Win7+ work upstream).
+# It does NOT use MSYS2: it drives a custom, legacy-Windows-compatible msvcrt-based
+# mingw cross toolchain, fetching nano (git) and ncurses (tarball) from scratch.
 
 SCRIPTNAME=$(basename "$0")
-SCRIPTVER="1.1.2"
+SCRIPTVER="1.1.3"
 
 # Colors
 YEL='\033[1;33m' # Yellow
@@ -35,20 +35,21 @@ NCURSES_URL="https://invisible-island.net/archives/ncurses/${NCURSES_ARCHIVE}"
 
 # Where finished executables/.zips land
 OUT_DIR="${HERE}/out"
-# Where sources are cloned
-SRC_DIR="${HERE}/sources"
-# Where building is performed
-BUILD_DIR="${HERE}/sources/build"
-# Where the vanilla nano tree is cloned and patched. Only this script and the
-# patches/ dir live on the branch; everything below is fetched/built at runtime.
-NANO_SRC="${SRC_DIR}/nano-src"
-NCURSES_SRC="${SRC_DIR}/ncurses-src"
+# Where sources are cloned, building is done, and log files live.
+SRC_DIR="${HERE}/_build"
+# Where building is performed, subdir of SRC_DIR.
+BUILD_DIR="${SRC_DIR}/build"
+# Where the vanilla nano and ncurses sources are fetched and patched (both under
+# SRC_DIR/src, created at runtime; not tracked in the repo).
+NANO_SRC="${SRC_DIR}/src/nano"
+NCURSES_SRC="${SRC_DIR}/src/ncurses"
 # Build log: execute() writes command output here instead of the console
 # unless --verbose is given.
-LOG_FILE="${OUT_DIR}/build.log"
+LOG_FILE="${BUILD_DIR}/build.log"
 
 # Build config defaults
 IS_DEBUG=false # Default is release mode
+IS_TINY=false # Default is a full-featured build
 WIN32_WINNT=0x0500 # Minimum target Windows ver
 
 error_exit() {
@@ -98,6 +99,33 @@ execute() {
   fi
 }
 
+# Apply the patches listed in a quilt-style series file, in order. This is the
+# single source of truth for patch order: the per-subdir 'series' files drive it,
+# so adding/reordering a patch only means editing that file. Blank lines and lines
+# beginning with '#' are skipped; only the first whitespace-separated field of a
+# line is used, so trailing quilt options/comments are tolerated.
+#   $1 = dir holding the patches and its 'series' file
+#   $2 = target source tree to patch
+#   $3 = apply method: 'git' (git apply, for a git repo) or 'patch' (patch -p1)
+apply_series() {
+  local dir="$1" target="$2" method="$3"
+  local series="${dir}/series"
+  [ -f "${series}" ] || error_exit "apply_series: no series file at ${series}"
+  local name _rest
+  # `|| [ -n "$name" ]` processes a final line that lacks a trailing newline.
+  while read -r name _rest || [ -n "${name}" ]; do
+    [ -z "${name}" ] && continue             # skip blank lines
+    case "${name}" in \#*) continue ;; esac  # skip comment lines
+    if [ "${method}" = "git" ]; then
+      execute "Applying ${name}..." "Failed to apply ${name}" \
+          git -C "${target}" apply --reject "${dir}/${name}"
+    else
+      execute "Applying ${name}..." "Failed to apply ${name}" \
+          patch -N -p1 -d "${target}" -i "${dir}/${name}"
+    fi
+  done < "${series}"
+}
+
 show_help() {
   cat <<EOF
 Usage:
@@ -105,8 +133,8 @@ Usage:
  - Builds GNU nano for legacy Windows.
 
 Archs:
-  i686 | x32 | x86  - Windows 32-bit (Windows 2000+)
-  x86_64 | x64      - Windows 64-bit (Windows XP x64/Server 2003+)
+  i686 | x32 | x86 | -32     - Windows 32-bit (Windows 2000+)
+  x86_64 | amd64 | x64 | -64 - Windows 64-bit (Windows XP x64/Server 2003+)
 
 Options:
   -h, --help                  Show this help.
@@ -114,15 +142,16 @@ Options:
   --deps                      Install prerequisites for using this script (Ubuntu/Debian only).
   -j <count>, --jobs <count>  Override make job count. (default: $JOBS)
   -d, --debug                 Create a debug build (default is release mode).
+  -t, --tiny                  Build a minimal nano (--enable-tiny; drops color, line numbers, nanorc, etc.).
   -v, --verbose               Show verbose build output.
-  -p, --package               After a successful build, zip each arch's nano.exe + support files into nano-<arch>.zip (x86_64 becomes nano-x64.zip).
-  --distclean                 Remove build output (out/), keeping fetched sources.
-  --clean                     Remove build output and fetched sources (out/ + sources/).
+  -p, --package               After a successful build, package nano.exe + support files into a zip.
+  -c, --clean                 Remove build output and fetched sources (out/ + _build/).
+  --distclean                 Remove build output (out/ + build tree), keeping fetched sources.
 EOF
 }
 
 show_version() {
-  printf "\n ${bold} %s Version %s \n\n" "$SCRIPTNAME" "$SCRIPTVER"
+  printf "\n ${bold} %s Version: ${underline}%s${c0}\n\n" "$SCRIPTNAME" "$SCRIPTVER"
   exit 0
 }
 
@@ -147,20 +176,26 @@ install_deps() {
   printf "${GRE}Done installing dependencies!${c0}\n"
 }
 
-# Zip an already-installed arch's nano.exe plus its runtime support files. The
-# staging dir lives under the arch's build dir; the resulting archive is dropped
-# in out/ as nano-<arch>.zip.
+# Zip an already-installed arch's nano.exe plus its support files. The staging
+# dir lives under the arch's build dir; the resulting archive is dropped in out/.
 packageNano() {
   local arch="$1" prefix="$2"
-  local stage="${BUILD_DIR}/${arch}/nano-${arch}"
-  local zipname="nano-${arch}.zip"
+  if [ "$arch" = "x86" ]; then
+    local zipname="nano_win32"
+  elif [ "$arch" = "x64" ]; then
+    local zipname="nano_win64"
+  else
+    local zipname="nano_${arch}" # Default to just ${arch}
+  fi
+  local stage="${BUILD_DIR}/${arch}/${zipname}"
+  local zipfile="${zipname}.zip"
 
   if [ ! -f "${prefix}/bin/nano.exe" ]; then
     error_exit "packageNano: ${prefix}/bin/nano.exe not found"
   fi
   log "${GRE}Packaging nano for arch ${arch}...${c0}\n"
 
-  rm -rf "${stage}" "${OUT_DIR}/${zipname}"
+  rm -rf "${stage}" "${OUT_DIR}/${zipfile}"
   mkdir -p "${stage}"
   cp -fv "${prefix}/bin/nano.exe" "${stage}/"
   # Ship our custom .nanorc (used automatically, since it sits beside nano.exe)
@@ -168,13 +203,13 @@ packageNano() {
   # Copy custom readme
   cp -fv "${HERE}/assets/readme.crlf" "${stage}/README.txt"
 
-  # Zip from the arch dir so the archive holds a top-level nano-<arch>/ folder,
-  # but write the .zip itself into out/.
+  # Zip from the arch dir so the archive holds a top-level ${zipname}/ folder
+  # (nano_win32/ or nano_win64/), but write the .zip itself into out/.
   printf "${CYA} Zipping up ${bold}${stage}${c0}...\n"
-  ( cd "${BUILD_DIR}/${arch}" && zip -r -q "${OUT_DIR}/${zipname}" "nano-${arch}" ) \
-    || error_exit "Failed to create ${zipname}"
+  ( cd "${BUILD_DIR}/${arch}" && zip -r -q "${OUT_DIR}/${zipfile}" "${zipname}" ) \
+    || error_exit "Failed to create ${zipfile}"
   rm -rf "${stage}"
-  log "${GRE}Packaged ${bold}${OUT_DIR}/${zipname}${c0}\n"
+  log "${GRE}Packaged ${bold}${OUT_DIR}/${zipfile}${c0}\n"
 }
 
 # Clone the vanilla nano source at NANO_VER into NANO_SRC (skip if already there).
@@ -199,15 +234,14 @@ fetch_ncurses() {
   mkdir -p "${NCURSES_SRC}"
   execute "Extracting ncurses ${NCURSES_VER}..." "Failed to extract ncurses" \
   tar -xzf "${NCURSES_ARCHIVE}" -C "${NCURSES_SRC}" --strip-components=1
-  # Windows 2000 compatibility: target WINVER=0x0500 and resolve AttachConsole()
-  # dynamically in the win32 console driver (see patches/ncurses-win2k-compat.patch).
-  # ncurses is a plain tarball (not a git repo) nested inside this git repo, so
-  # `git apply` would find the parent repo and skip every file -- use patch(1).
-  execute "Applying ncurses-win2k-compat.patch..." "Failed to apply ncurses-win2k-compat.patch" \
-      patch -N -p1 -d "${NCURSES_SRC}" -i "${HERE}/patches/ncurses-win2k-compat.patch"
+  # Windows 2000 compatibility (WINVER=0x0500 + dynamic AttachConsole), applied in
+  # patches/ncurses/series order. ncurses is a plain tarball (not a git repo)
+  # nested inside this git repo, so `git apply` would find the parent repo and skip
+  # every file -- use patch(1).
+  apply_series "${HERE}/patches/ncurses" "${NCURSES_SRC}" patch
 }
 
-# Apply the bundled Windows patch onto the vanilla nano source. The sentinel
+# Apply the bundled Windows patches onto the vanilla nano source. The sentinel
 # lives inside NANO_SRC, so a fresh clone (or a wiped NANO_SRC) re-patches.
 apply_patches() {
   if [ -f "${NANO_SRC}/.nano-win-patched" ]; then
@@ -215,24 +249,16 @@ apply_patches() {
     return
   fi
   log "${GRE}Applying patches...${c0}\n"
-  # nano-src is its own git repo, so git apply resolves it correctly via -C.
-  # nano-win32.patch: Windows/console support; nano-extra.patch: color defaults
-  # and syntax-highlighting customizations.
-  execute "Applying nano-win32.patch..." "Failed to apply nano-win32.patch" \
-      git -C "${NANO_SRC}" apply --reject "${HERE}/patches/nano-win32.patch"
-  execute "Applying nano-extra.patch..." "Failed to apply nano-extra.patch" \
-      git -C "${NANO_SRC}" apply --reject "${HERE}/patches/nano-extra.patch"
-  # Drop in the Windows resource sources referenced by src/Makefile.am's windres
-  # rule (added by nano-extra.patch): the app icon and version-info script get
-  # compiled into nano.exe.
+  # Apply every patch in patches/nano/ in series order (nano-win32 must be first).
+  apply_series "${HERE}/patches/nano" "${NANO_SRC}" git
+  # Drop in the Windows resource sources referenced by rc-icon.patch's windres
+  # rule: the app icon and version-info script get compiled into nano.exe.
   execute "Adding Windows resources (nano.rc + nano.ico)..." "Failed to copy resource files" \
-      cp -fv "${HERE}/patches/nano.rc" "${HERE}/assets/icon/nano.ico" "${NANO_SRC}/src/"
-  # Force a clean release-style version. nano derives its version by running
-  # `git describe` in the build tree, but our build dir lives inside $HERE's git
-  # repo, so from-git versioning reports the WRONG repo's tag (and would be blank
-  # on the orphan branch). Removing roll-a-release.sh makes configure treat this
-  # as a tarball build, so nano reports its real version ("GNU nano, version 9.1")
-  # and also skips configure's from-git pkg-config/gettext requirement.
+      cp -fv "${HERE}/patches/nano/nano.rc" "${HERE}/assets/icon/nano.ico" "${NANO_SRC}/src/"
+  # Report a clean release version. With roll-a-release.sh present, configure does
+  # a "from git" build: it derives a dev-style version from the source tree and
+  # requires the from-git pkg-config/gettext toolchain. Removing it makes configure
+  # treat this as a release tarball, so nano reports "GNU nano, version 9.1".
   rm -f "${NANO_SRC}/roll-a-release.sh"
   touch "${NANO_SRC}/.nano-win-patched"
   log "${GRE}Done patching sources!${c0}\n"
@@ -246,16 +272,13 @@ clean_output() {
 
 clean_build() {
   printf "${YEL}Cleaning build directories...${c0}\n"
-  rm -rf "${BUILD_DIR}/x86" &&
-  rm -rf "${BUILD_DIR}/x64" &&
-  rm -rf "${OUT_DIR}/build.log"
+  rm -rf "${BUILD_DIR}"
   printf "${GRE}Done cleaning ${BUILD_DIR} ${c0}\n"
 }
 
 clean_sources() {
   printf "${YEL}Cleaning sources directory...${c0}\n"
-  rm -rf "${NANO_SRC}" &&
-  rm -rf "${NCURSES_SRC}" &&
+  rm -rf "${SRC_DIR}/src" &&
   rm -rf "${SRC_DIR}/${NCURSES_ARCHIVE}"
   printf "${GRE}Done cleaning ${SRC_DIR} ${c0}\n"
 }
@@ -344,8 +367,8 @@ function buildNano() {
   # Per-arch build log so a second arch's build doesn't clobber the first one's.
   # `local` here shadows the global LOG_FILE via dynamic scoping, so execute()
   # calls made from this function write here; the fetch/patch phase keeps using
-  # the shared ${OUT_DIR}/build.log.
-  local LOG_FILE="${BUILD_DIR}/${arch}/build.log"
+  # the shared ${BUILD_DIR}/build.log.
+  local LOG_FILE="${BUILD_DIR}/${arch}/build_${arch}.log"
   : > "${LOG_FILE}"
 
   # Build/install ncurses (out-of-tree against the extracted source; absolute
@@ -365,13 +388,19 @@ function buildNano() {
   make install $VFLAGS
   cd ..
 
+  # Nano feature set: a normal build enables color/utf8/nanorc; --tiny makes a
+  # minimal build via --enable-tiny (which also drops this fork's enhancements,
+  # since they live under the NANO_TINY/ENABLE_* guards).
+  local NANO_FEATURES="--enable-color --enable-utf8 --enable-nanorc"
+  [ "$IS_TINY" = true ] && NANO_FEATURES="--enable-tiny"
+
   # Build nano itself (out-of-tree against the cloned+patched source in NANO_SRC)
   mkdir -p "nano" && cd "nano"
   execute "Configuring nano..." "Failed to configure nano!" \
   "${NANO_SRC}/configure"  \
     --build="${_build}" --host="${_host}" --prefix="${_prefix}"  \
     --disable-dependency-tracking  \
-    --enable-{color,utf8,nanorc} \
+    $NANO_FEATURES \
     --disable-{nls,speller,threads,rpath} \
     $QUIETFLAG
   execute "Building nano..." "nano build failed." \
@@ -384,7 +413,7 @@ function buildNano() {
 
   log "${GRE}Done building Nano ${_debug} ${arch} ${c0}\n"
 
-  # Optionally zip the result into ${OUT_DIR}/nano-${arch}.zip
+  # Optionally zip the result into out/ (nano_win32.zip / nano_win64.zip)
   if [ "$PACKAGE" ]; then
     packageNano "$arch" "$_prefix"
   fi
@@ -410,12 +439,15 @@ while :; do
     -d|--debug)
         IS_DEBUG=true
         ;;
+    -t|--tiny)
+        IS_TINY=true
+        ;;
     --distclean)
         clean_build
         clean_output
         exit 0
         ;;
-    --clean)
+    -c|--clean)
         clean_build
         clean_output
         clean_sources
@@ -462,17 +494,17 @@ else
     error_exit "--package requires 'zip'; run '$SCRIPTNAME --deps' or install it manually"
   fi
 
-  printf "${bold}Nano build script ver. ${SCRIPTVER} ${c0}\n"
+  printf "${bold}Nano build script ver. ${underline}${SCRIPTVER}${c0}\n"
 
   # Everything is fetched/built under $HERE regardless of the caller's cwd.
   cd "${HERE}"
-  mkdir -vp "${OUT_DIR}" "${SRC_DIR}"
+  mkdir -vp "${OUT_DIR}" "${SRC_DIR}" "${BUILD_DIR}"
   : > "${LOG_FILE}"  # start a fresh build log (execute() appends to it)
 
   # Fetch ncurses
   fetch_ncurses
 
-  # Fetch vanilla nano, layer the Windows patch on top, then generate configure
+  # Fetch vanilla nano, layer the Windows patches on top, then generate configure
   # & the gnulib import in the source tree (needed since we build "from git").
   fetch_nano
   apply_patches
