@@ -251,10 +251,11 @@ apply_patches() {
   log "${GRE}Applying patches...${c0}\n"
   # Apply every patch in patches/nano/ in series order (nano-win32 must be first).
   apply_series "${HERE}/patches/nano" "${NANO_SRC}" git
-  # Drop in the Windows resource sources referenced by rc-icon.patch's windres
-  # rule: the app icon and version-info script get compiled into nano.exe.
-  execute "Adding Windows resources (nano.rc + nano.ico)..." "Failed to copy resource files" \
-      cp -fv "${HERE}/patches/nano/nano.rc" "${HERE}/assets/icon/nano.ico" "${NANO_SRC}/src/"
+  # Drop in the app icon referenced by rc-icon.patch's windres rule. nano.rc is
+  # created by that patch; the .ico is binary, so it's copied here rather than
+  # embedded in a patch.
+  execute "Adding Windows resource icon (nano.ico)..." "Failed to copy nano.ico" \
+      cp -fv "${HERE}/assets/icon/nano.ico" "${NANO_SRC}/src/"
   # Report a clean release version. With roll-a-release.sh present, configure does
   # a "from git" build: it derives a dev-style version from the source tree and
   # requires the from-git pkg-config/gettext toolchain. Removing it makes configure
