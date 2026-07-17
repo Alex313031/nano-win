@@ -12,10 +12,18 @@ but unlike that repo, which uses an entire patched nano source tree, this repo p
 separated patch files and downloading + patching sources, which is also needed
 for patching [ncurses](https://invisible-island.net/ncurses/) for Windows 2000+ support.  
 
+<table>
+  <tr>
+    <td align="center" valign="middle"><img src="./assets/WinNT4Workstation_Logo.svg" height="64"></td>
+    <td align="center" valign="middle"><img src="./assets/Win2000_Logo.svg" height="64"></td>
+    <td align="center" valign="middle"><img src="./assets/WinXP_Logo.svg" height="64"></td>
+  </tr>
+</table>
+
 ## Downloads
 
-The latest CI build can be found in Releases [Here](https://github.com/Alex313031/nano-win/releases),  
-otherwise
+The latest CI build can be found in releases [Here](https://github.com/Alex313031/nano/releases/tag/CI-Build),  
+otherwise, grab the latest stable release [Here](https://github.com/Alex313031/nano/releases/latest).
 
 ## Building
 
