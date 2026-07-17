@@ -34,7 +34,7 @@ jobs:
       - name: Install Build Dependencies
         run: |
           sudo apt update
-          sudo apt install -y build-essential g++-multilib zip unzip wget tar git patch autoconf automake autopoint pkg-config gettext
+          sudo apt install -y build-essential gcc g++ g++-multilib zip unzip wget tar git patch autoconf automake autopoint pkg-config gettext
 
       - name: Download MinGW
         # Use our own MinGW fork for compiling Windows builds
@@ -50,11 +50,17 @@ jobs:
           echo "$HOME/x64_llvm/bin" >> "$GITHUB_PATH"
           echo "$HOME/i686_llvm/bin" >> "$GITHUB_PATH"
 
-      - name: Build x86 (Windows 2000+)
-        run: ./build_nano.sh x86 --llvm --package
+      - name: Build Windows x86
+        run: ./build_nano.sh -32 --llvm --package
 
-      - name: Build x64 (Windows Server 2003+)
-        run: ./build_nano.sh x64 --llvm --package
+      - name: Build Windows x64
+        run: ./build_nano.sh -64 --llvm --package
+
+      - name: Build Linux x86
+        run: ./build_nano.sh -32 --linux --package
+
+      - name: Build Linux x64
+        run: ./build_nano.sh -64 --linux --package
 
       - name: Upload Build Logs
         # Builds run non-verbose, so on failure the compiler output is only in
@@ -79,7 +85,7 @@ jobs:
       - name: Upload Runner Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: nano_win_${{ env.SHA_SHORT}}
+          name: nano_${{ env.SHA_SHORT}}
           path: out/nano_*.zip
           if-no-files-found: error
 
@@ -102,6 +108,7 @@ jobs:
             echo "Automated build of commit ${{ github.sha }}"
             echo
             echo "For official releases, see the version-tagged releases on this page."
+            echo
             echo "----"
             git log -1 --format='%B'
           } > release-notes.md

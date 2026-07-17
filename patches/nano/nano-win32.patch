@@ -62,7 +62,7 @@ index ef7fbcb..5f8d613 100755
  	getline
  	getopt-gnu
 diff --git a/src/files.c b/src/files.c
-index 0cc8b9b..a33a480 100644
+index 0cc8b9b..9d4e1ce 100644
 --- a/src/files.c
 +++ b/src/files.c
 @@ -29,7 +29,10 @@
@@ -129,7 +129,7 @@ index 0cc8b9b..a33a480 100644
  		}
  #elif defined(HAVE_GETEUID)
 -		if (new_one && !(fileinfo.st_mode & (S_IWUSR|S_IWGRP|S_IWOTH)) && geteuid() == ROOT_UID)
-+		if (new_one && !(fileinfo.st_mode & (S_IWUSR|S_IWGRP|S_IWOTH)) && IsUserAnAdmin())
++		if (new_one && !(fileinfo.st_mode & (S_IWUSR|S_IWGRP|S_IWOTH)) && IsUserAnAdminEx())
  			statusline(ALERT, _("'%s' is meant to be read-only"), realname);
  #endif
  	} else if (*filename && filename[strlen(filename) - 1] == '/') {
@@ -138,7 +138,7 @@ index 0cc8b9b..a33a480 100644
  	/* When reading from stdin, restore the terminal and reenter curses mode. */
  	if (isendwin()) {
 -		if (!isatty(STDIN_FILENO))
-+		if (GetConsoleWindow() == NULL)
++		if (GetConsoleWindowEx() == NULL)
  			reconnect_and_store_state();
  		terminal_init();
  		doupdate();
@@ -212,12 +212,12 @@ index 0cc8b9b..a33a480 100644
  		dirname = expand_leading_tilde(dirname);
  		/* A non-absolute path is relative to the current browser directory. */
 -		if (dirname[0] != '/') {
-+		if (PathIsRelativeA(dirname)) {
++		if (PathIsRelativeEx(dirname)) {
  			dirname = nrealloc(dirname, strlen(present_path) + strlen(wasdirname) + 1);
  			sprintf(dirname, "%s%s", present_path, wasdirname);
  		}
 diff --git a/src/nano.c b/src/nano.c
-index 129ff78..f356d4c 100644
+index 129ff78..aef5d4b 100644
 --- a/src/nano.c
 +++ b/src/nano.c
 @@ -41,6 +41,7 @@
@@ -259,7 +259,7 @@ index 129ff78..f356d4c 100644
  	/* When input comes from a terminal, show a helpful message. */
 -	if (isatty(STDIN_FILENO))
 -		fprintf(stderr, _("Reading data from keyboard; type ^D or ^D^D to finish.\n"));
-+	if (GetConsoleWindow() != NULL)
++	if (GetConsoleWindowEx() != NULL)
 +		fprintf(stderr, _("Reading data from keyboard; type ^Z to finish.\n"));
  
  	/* Open standard input. */
@@ -326,10 +326,24 @@ index 129ff78..f356d4c 100644
  
  	/* Nano is a hands-on editor -- it needs a keyboard. */
 -	if (!isatty(STDIN_FILENO))
-+	if (GetConsoleWindow() == NULL)
++	if (GetConsoleWindowEx() == NULL)
  		die(_("Standard input is not a terminal\n"));
  
  	/* If no filenames were given, or all of them were invalid things like
+diff --git a/src/prototypes.h b/src/prototypes.h
+index 18cd3eb..fee8ada 100644
+--- a/src/prototypes.h
++++ b/src/prototypes.h
+@@ -596,6 +596,9 @@ linestruct *line_from_number(ssize_t number);
+ #endif
+ 
+ /* Most functions in winio.c. */
++void *GetConsoleWindowEx(void);
++int IsUserAnAdminEx(void);
++int PathIsRelativeEx(const char *path);
+ #ifndef NANO_TINY
+ void record_macro(void);
+ void run_macro(void);
 diff --git a/src/rcfile.c b/src/rcfile.c
 index 59d932a..0d746ac 100644
 --- a/src/rcfile.c
@@ -394,7 +408,7 @@ index 3180c36..196310d 100644
  #endif /* ENABLE_FORMATTER */
  
 diff --git a/src/utils.c b/src/utils.c
-index fd74390..61d1afc 100644
+index fd74390..fd49611 100644
 --- a/src/utils.c
 +++ b/src/utils.c
 @@ -27,21 +27,19 @@
@@ -418,14 +432,14 @@ index fd74390..61d1afc 100644
 -
 -			if (userage)
 -				homenv = userage->pw_dir;
-+		if (homenv == NULL || IsUserAnAdmin()) {
++		if (homenv == NULL || IsUserAnAdminEx()) {
 +			homenv = getenv("ALLUSERSPROFILE");
  		}
  #endif
  
 diff --git a/src/win32.h b/src/win32.h
 new file mode 100644
-index 0000000..69962b5
+index 0000000..e52f880
 --- /dev/null
 +++ b/src/win32.h
 @@ -0,0 +1,44 @@
@@ -448,15 +462,15 @@ index 0000000..69962b5
 +#include "winsdkver.h"
 +
 +#ifndef _WIN32_WINNT
-+ #define _WIN32_WINNT 0x0500 // Windows 2000
++ #define _WIN32_WINNT 0x0400 // Windows NT 4
 +#endif
 +
 +#ifndef WINVER
-+ #define WINVER 0x0500 // Same as _WIN32_WINNT above
++ #define WINVER 0x0400 // Same as _WIN32_WINNT above
 +#endif
 +
 +#ifndef _WIN32_IE
-+ #define _WIN32_IE 0x0501 // Minimum Internet Explorer version for common controls
++ #define _WIN32_IE 0x0400 // Minimum Internet Explorer version for common controls
 +#endif
 +
 +#include "sdkddkver.h"
@@ -474,7 +488,7 @@ index 0000000..69962b5
 +
 +#endif // NANO_WIN32_H_
 diff --git a/src/winio.c b/src/winio.c
-index f0bfffe..eab67af 100644
+index f0bfffe..9ab6d4a 100644
 --- a/src/winio.c
 +++ b/src/winio.c
 @@ -30,6 +30,7 @@
@@ -485,7 +499,132 @@ index f0bfffe..eab67af 100644
  
  #ifdef REVISION
  #define BRANDING  REVISION
-@@ -268,10 +269,13 @@ void read_keys_from(WINDOW *frame)
+@@ -37,6 +38,124 @@
+ #define BRANDING  PACKAGE_STRING
+ #endif
+ 
++/* GetConsoleWindow() first appeared in Windows 2000; on Windows NT 4.0 it is
++ * absent from kernel32.dll, so importing it statically stops nano from loading
++ * there.  Resolve it dynamically, and when it is missing fall back to an NT4-safe
++ * console check.  Callers only test the result against NULL, so a non-NULL
++ * sentinel is fine when there is no window handle to return. */
++void *GetConsoleWindowEx(void)
++{
++	typedef HWND (WINAPI *GetConsoleWindow_fn)(void);
++	static GetConsoleWindow_fn p_GetConsoleWindow = NULL;
++	static BOOL resolved = FALSE;
++
++	if (!resolved) {
++		HMODULE k32 = GetModuleHandleA("kernel32.dll");
++		if (k32 != NULL)
++			p_GetConsoleWindow =
++				(GetConsoleWindow_fn)GetProcAddress(k32, "GetConsoleWindow");
++		resolved = TRUE;
++	}
++
++	if (p_GetConsoleWindow != NULL)
++		return (void *)p_GetConsoleWindow();
++
++	/* NT 4.0 fallback: no console-window handle exists, so report a non-NULL
++	 * sentinel when a console is attached (either standard handle is one). */
++	{
++		DWORD mode;
++
++		if (GetConsoleMode(GetStdHandle(STD_INPUT_HANDLE), &mode) ||
++				GetConsoleMode(GetStdHandle(STD_OUTPUT_HANDLE), &mode))
++			return (void *)(size_t)1;
++
++		return NULL;
++	}
++}
++
++/* IsUserAnAdmin() lives in shell32.dll v4.71+ (shipped with IE4); base Windows NT
++ * 4.0 has an older shell32 without it, so a static import would break loading there.
++ * Resolve it dynamically, and fall back to an NT4-safe token-group membership check
++ * (CheckTokenMembership is Windows 2000+, so walk the token's groups by hand). */
++int IsUserAnAdminEx(void)
++{
++	typedef BOOL (WINAPI *IsUserAnAdmin_fn)(void);
++	static IsUserAnAdmin_fn p_IsUserAnAdmin = NULL;
++	static BOOL resolved = FALSE;
++
++	if (!resolved) {
++		HMODULE shell32 = LoadLibraryA("shell32.dll");
++		if (shell32 != NULL)
++			p_IsUserAnAdmin =
++				(IsUserAnAdmin_fn)GetProcAddress(shell32, "IsUserAnAdmin");
++		resolved = TRUE;
++	}
++
++	if (p_IsUserAnAdmin != NULL)
++		return p_IsUserAnAdmin();
++
++	{
++		SID_IDENTIFIER_AUTHORITY nt_authority = SECURITY_NT_AUTHORITY;
++		HANDLE token = NULL;
++		TOKEN_GROUPS *groups = NULL;
++		PSID admins = NULL;
++		DWORD len = 0, i;
++		BOOL is_admin = FALSE;
++
++		if (!OpenProcessToken(GetCurrentProcess(), TOKEN_QUERY, &token))
++			return FALSE;
++
++		GetTokenInformation(token, TokenGroups, NULL, 0, &len);
++		if (len > 0)
++			groups = (TOKEN_GROUPS *)malloc(len);
++
++		if (groups != NULL &&
++				GetTokenInformation(token, TokenGroups, groups, len, &len) &&
++				AllocateAndInitializeSid(&nt_authority, 2, SECURITY_BUILTIN_DOMAIN_RID,
++					DOMAIN_ALIAS_RID_ADMINS, 0, 0, 0, 0, 0, 0, &admins)) {
++			for (i = 0; i < groups->GroupCount; i++)
++				if (EqualSid(groups->Groups[i].Sid, admins)) {
++					is_admin = TRUE;
++					break;
++				}
++			FreeSid(admins);
++		}
++
++		free(groups);
++		CloseHandle(token);
++		return is_admin;
++	}
++}
++
++/* PathIsRelativeA() lives in shlwapi.dll, which base Windows NT 4.0 lacks (it came
++ * with IE4). Resolve it dynamically, and fall back to the same rule it implements:
++ * a path is relative unless it starts with a separator or is drive-qualified. */
++int PathIsRelativeEx(const char *path)
++{
++	typedef BOOL (WINAPI *PathIsRelativeA_fn)(LPCSTR);
++	static PathIsRelativeA_fn p_PathIsRelativeA = NULL;
++	static BOOL resolved = FALSE;
++
++	if (!resolved) {
++		HMODULE shlwapi = LoadLibraryA("shlwapi.dll");
++		if (shlwapi != NULL)
++			p_PathIsRelativeA =
++				(PathIsRelativeA_fn)GetProcAddress(shlwapi, "PathIsRelativeA");
++		resolved = TRUE;
++	}
++
++	if (p_PathIsRelativeA != NULL)
++		return p_PathIsRelativeA(path);
++
++	if (path == NULL || path[0] == '\0')
++		return TRUE;
++	if (path[0] == '\\' || path[0] == '/')
++		return FALSE;
++	if (path[1] == ':')
++		return FALSE;
++	return TRUE;
++}
++
+ /* When having an older ncurses, then most likely libvte is older too. */
+ #if defined(NCURSES_VERSION_PATCH) && (NCURSES_VERSION_PATCH < 20200212)
+ #define USING_OLDER_LIBVTE  yes
+@@ -268,10 +387,13 @@ void read_keys_from(WINDOW *frame)
  	if (!key_buffer)
  		reserve_space_for(capacity);
  
@@ -502,7 +641,7 @@ index f0bfffe..eab67af 100644
  
  #ifndef NANO_TINY
  	/* Cancel the highlighting of a search match, if there still is one. */
-@@ -308,9 +312,12 @@ void read_keys_from(WINDOW *frame)
+@@ -308,9 +430,12 @@ void read_keys_from(WINDOW *frame)
  			break;
  
  		/* When the keystroke buffer is full, extend it. */
@@ -516,7 +655,7 @@ index f0bfffe..eab67af 100644
  		key_buffer[waiting_codes++] = input;
  	}
  
-@@ -1206,13 +1213,18 @@ int parse_kbinput(WINDOW *frame)
+@@ -1206,13 +1331,18 @@ int parse_kbinput(WINDOW *frame)
  		return FOREIGN_SEQUENCE;
  #endif
  
@@ -538,7 +677,7 @@ index f0bfffe..eab67af 100644
  #ifndef NANO_TINY
  		/* Is Shift being held? */
  		if (modifiers & 0x01) {
-@@ -1263,7 +1275,6 @@ int parse_kbinput(WINDOW *frame)
+@@ -1263,7 +1393,6 @@ int parse_kbinput(WINDOW *frame)
  		}
  #endif
  	}
@@ -546,7 +685,7 @@ index f0bfffe..eab67af 100644
  
  	/* Spurious codes from VTE -- see https://sv.gnu.org/bugs/?64578. */
  	if (keycode == mousefocusin || keycode == mousefocusout)
-@@ -1531,12 +1542,6 @@ char *get_verbatim_kbinput(WINDOW *frame, size_t *count)
+@@ -1531,12 +1660,6 @@ char *get_verbatim_kbinput(WINDOW *frame, size_t *count)
  	if (!ISSET(RAW_SEQUENCES))
  		keypad(frame, FALSE);
  
@@ -559,7 +698,7 @@ index f0bfffe..eab67af 100644
  	linger_after_escape = TRUE;
  
  	/* Read in a single byte or two escapes. */
-@@ -1554,12 +1559,6 @@ char *get_verbatim_kbinput(WINDOW *frame, size_t *count)
+@@ -1554,12 +1677,6 @@ char *get_verbatim_kbinput(WINDOW *frame, size_t *count)
  
  	linger_after_escape = FALSE;
  
