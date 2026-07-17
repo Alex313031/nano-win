@@ -8,7 +8,7 @@
 # mingw cross toolchain, fetching nano (git) and ncurses (tarball) from scratch.
 
 SCRIPTNAME=$(basename "$0")
-SCRIPTVER="1.1.4"
+SCRIPTVER="1.1.5"
 
 # Colors
 YEL='\033[1;33m' # Yellow
@@ -49,6 +49,7 @@ LOG_FILE="${BUILD_DIR}/build.log"
 
 # Build config defaults
 IS_DEBUG=false # Default is release mode
+USE_LLVM=false # When true, build with LLVM/MinGW toolchain instead of GCC/MinGW.
 IS_TINY=false # Default is a full-featured build
 WIN32_WINNT=0x0500 # Minimum target Windows ver
 
@@ -145,6 +146,8 @@ Options:
   -t, --tiny                  Build a minimal nano (--enable-tiny; drops color, line numbers, nanorc, etc.).
   -v, --verbose               Show verbose build output.
   -p, --package               After a successful build, package nano.exe + support files into a zip.
+  -l, --llvm                  Build with Clang (LLVM/MinGW) instead of GCC/MinGW toolchain.
+  --patch                     Fetch and patch the sources, then stop (no configure/build; no arch needed).
   -c, --clean                 Remove build output and fetched sources (out/ + _build/).
   --distclean                 Remove build output (out/ + build tree), keeping fetched sources.
 EOF
@@ -296,20 +299,44 @@ function buildNano() {
   fi
   if [ "$arch" = "x86" ]; then
     local SIMD_FLAGS="-mfpmath=387 -mmmx -mno-sse -mno-sse2" # Plain x86 without SSE for old CPUs
-    local _host="i686-w64-mingw32"
+    local march="i686"
   elif [ "$arch" = "x64" ]; then
     local SIMD_FLAGS="-mfpmath=sse -msse -mfxsr -msse2" # Plain x64 with SSE2
-    local _host="x86_64-w64-mingw32" # Host target triple
+    local march="x86_64"
   else
     error_exit "Unsupported arch"
   fi
+  local _host="$march-w64-mingw32" # Host target triple
 
   local _build="$(gcc -dumpmachine)"
   # Where make installs everything
   local _prefix="${BUILD_DIR}/${arch}/install"
 
-  if ! command -v "${_host}-gcc" >/dev/null 2>&1; then
-    error_exit "${_host}-gcc not found on \$PATH; add your MinGW toolchain's bin/ dir to PATH first."
+  if [ "$USE_LLVM" = true ]; then
+    local cc="$march-w64-mingw32-clang"
+    local cxx="$march-w64-mingw32-clang++"
+    local ld="$march-w64-mingw32-clang++"
+    local ar="$march-w64-mingw32-ar"
+    local rc="$march-w64-mingw32-windres"
+    # LLVM/MinGW links its runtime (compiler-rt/libc++) statically via -static in
+    # LDFLAGS; the GCC-only -static-lib* flags would just warn "argument unused".
+    local STATIC_LIBGCC="" STATIC_LIBSTDCXX=""
+  else
+    local cc="$march-w64-mingw32-gcc"
+    local cxx="$march-w64-mingw32-g++"
+    local ld="$march-w64-mingw32-g++"
+    local ar="$march-w64-mingw32-ar"
+    local rc="$march-w64-mingw32-windres"
+    local STATIC_LIBGCC="-static-libgcc" STATIC_LIBSTDCXX="-static-libstdc++"
+  fi
+  export CC="${cc}"
+  export CXX="${cxx}"
+  export LD="${ld}"
+  export AR="${ar}"
+  export RC="${rc}"
+
+  if ! command -v "${cc}" >/dev/null 2>&1; then
+    error_exit "${cc} not found on \$PATH; add your MinGW toolchain's bin/ dir to PATH first."
   fi
 
   log "${GRE}Building Nano for Windows ${arch}...${c0}\n"
@@ -334,8 +361,8 @@ function buildNano() {
   # startup pulls in a wWinMain reference, but nano only defines main(), so any
   # -municode (in CFLAGS or LDFLAGS) breaks the link with "undefined reference to
   # wWinMain". UNICODE/_UNICODE are already defined above for the Win32 API.
-  export CFLAGS="${OPT_FLAGS} ${DEFINES} -static-libgcc"
-  export CPPFLAGS="${OPT_FLAGS} ${DEFINES} -static-libstdc++ -I${_prefix}/include -pipe"
+  export CFLAGS="${OPT_FLAGS} ${DEFINES} ${STATIC_LIBGCC}"
+  export CPPFLAGS="${OPT_FLAGS} ${DEFINES} ${STATIC_LIBSTDCXX} -I${_prefix}/include -pipe"
   export CXXFLAGS="${CPPFLAGS}"
   export LDFLAGS="-L${_prefix}/lib -static -Wl,--subsystem,console:5.00 ${STRIP_FLAG}"
   # Libraries to link
@@ -486,6 +513,12 @@ while :; do
     -p|--package)
         PACKAGE=1
         ;;
+    --patch)
+        PATCH_ONLY=1
+        ;;
+    -l|--llvm)
+        USE_LLVM=true
+        ;;
     --)
         shift
         break
@@ -503,39 +536,48 @@ while :; do
   shift
 done
 
-if [ ! "$BUILD_I686" ] && [ ! "$BUILD_X86_64" ]; then
+# An architecture is required unless we are only fetching + patching (--patch).
+if [ ! "$PATCH_ONLY" ] && [ ! "$BUILD_I686" ] && [ ! "$BUILD_X86_64" ]; then
   arg_error "No architecture specified (i686/x32 and/or x86_64/x64)"
-else
-  if [ "$PACKAGE" ] && ! command -v zip >/dev/null 2>&1; then
-    error_exit "--package requires 'zip'; run '$SCRIPTNAME --deps' or install it manually"
-  fi
+fi
 
-  printf "${bold}Nano build script ver. ${underline}${SCRIPTVER}${c0}\n"
+if [ "$PACKAGE" ] && ! command -v zip >/dev/null 2>&1; then
+  error_exit "--package requires 'zip'; run '$SCRIPTNAME --deps' or install it manually"
+fi
 
-  # Everything is fetched/built under $HERE regardless of the caller's cwd.
-  cd "${HERE}"
-  mkdir -vp "${OUT_DIR}" "${SRC_DIR}" "${BUILD_DIR}"
-  : > "${LOG_FILE}"  # start a fresh build log (execute() appends to it)
+printf "${bold}Nano build script ver. ${underline}${SCRIPTVER}${c0}\n"
 
-  # Fetch ncurses
-  fetch_ncurses
+# Everything is fetched/built under $HERE regardless of the caller's cwd.
+cd "${HERE}"
+mkdir -vp "${OUT_DIR}" "${SRC_DIR}" "${BUILD_DIR}"
+: > "${LOG_FILE}"  # start a fresh build log (execute() appends to it)
 
-  # Fetch vanilla nano, layer the Windows patches on top, then generate configure
-  # & the gnulib import in the source tree (needed since we build "from git").
-  fetch_nano
-  apply_patches
-  rm -rf "${SRC_DIR}/${NCURSES_ARCHIVE}" # Cleanup ncurses tarball now
-  if [ ! -x "${NANO_SRC}/configure" ]; then
-    execute "Running autogen.sh..." "autogen.sh failed" \
-        sh -c 'cd "$1" && ./autogen.sh' _ "${NANO_SRC}"
-  fi
+# Fetch ncurses, then fetch vanilla nano and layer the Windows patches on top.
+fetch_ncurses
+fetch_nano
+apply_patches
+rm -rf "${SRC_DIR}/${NCURSES_ARCHIVE}" # Cleanup ncurses tarball now
 
-  # Build 32 bit nano.exe
-  if [ "$BUILD_I686" ]; then
-    buildNano x86
-  fi
-  # Build 64 bit nano.exe
-  if [ "$BUILD_X86_64" ]; then
-    buildNano x64
-  fi
+# --patch: stop with the sources fetched and patched, but not configured or built.
+if [ "$PATCH_ONLY" ]; then
+  log "${GRE}Sources fetched and patched (--patch); skipping configure/build.${c0}\n"
+  log "  ${bold}nano:${c0}    ${NANO_SRC}\n"
+  log "  ${bold}ncurses:${c0} ${NCURSES_SRC}\n"
+  exit 0
+fi
+
+# Generate configure & the gnulib import in the source tree (needed since we
+# build "from git").
+if [ ! -x "${NANO_SRC}/configure" ]; then
+  execute "Running autogen.sh..." "autogen.sh failed" \
+      sh -c 'cd "$1" && ./autogen.sh' _ "${NANO_SRC}"
+fi
+
+# Build 32 bit nano.exe
+if [ "$BUILD_I686" ]; then
+  buildNano x86
+fi
+# Build 64 bit nano.exe
+if [ "$BUILD_X86_64" ]; then
+  buildNano x64
 fi

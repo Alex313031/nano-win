@@ -1,0 +1,55 @@
+Provide _time32() for legacy x64 Windows. XP x64 / Server 2003 ship an
+msvcrt.dll that exports _time64 but not _time32, which the mingw-w64 x64
+runtime references; defining it here (delegating to _time64) keeps nano.exe
+loadable there. x64-only; 32-bit builds import plain time().
+
+diff --git a/src/Makefile.am b/src/Makefile.am
+index b7bb65a..53cba98 100644
+--- a/src/Makefile.am
++++ b/src/Makefile.am
+@@ -41,7 +41,8 @@ nano_SOURCES = \
+ 		text.c \
+ 		utils.c \
+ 		winio.c \
+-		version.c
++		version.c \
++		time32-compat.c
+ 
+ nano_LDADD = $(top_builddir)/lib/libgnu.a @LIBINTL@ \
+ 		$(GETRANDOM_LIB) $(CLOCK_TIME_LIB) $(LIBTHREAD) \
+diff --git a/src/time32-compat.c b/src/time32-compat.c
+new file mode 100644
+index 0000000..71618d2
+--- /dev/null
++++ b/src/time32-compat.c
+@@ -0,0 +1,30 @@
++/* time32-compat.c -- supply _time32() on legacy 64-bit Windows.
++ *
++ * Windows XP x64 and Server 2003 (NT 5.2) ship an msvcrt.dll that exports
++ * _time64 but NOT _time32, yet the mingw-w64 x64 runtime references _time32 --
++ * so nano.exe fails to load there with "_time32 could not be located in the
++ * dynamic link library msvcrt.dll".  Define _time32 ourselves (delegating to
++ * the available _time64) so the reference is satisfied locally and never
++ * resolved against msvcrt.  On Vista+ (which does export _time32) this is used
++ * instead, with identical behaviour.  x64 only -- 32-bit builds import plain
++ * time() and are unaffected.
++ */
++#ifdef _WIN64
++
++/* Mirror msvcrt's types/prototype without including <time.h>, whose _time32
++ * declaration is __declspec(dllimport) -- defining a dllimport'd function is an
++ * error.  __time32_t is long; __time64_t is __int64. */
++typedef long       nano_time32_t;
++typedef long long  nano_time64_t;
++
++nano_time64_t __cdecl _time64(nano_time64_t *_Time);
++
++nano_time32_t __cdecl _time32(nano_time32_t *_Time)
++{
++	nano_time64_t now = _time64((nano_time64_t *)0);
++	if (_Time)
++		*_Time = (nano_time32_t)now;
++	return (nano_time32_t)now;
++}
++
++#endif /* _WIN64 */
