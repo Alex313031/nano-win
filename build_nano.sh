@@ -257,7 +257,7 @@ fetch_ncurses() {
     return
   fi
   cd "${SRC_DIR}"
-  execute "Downloading ncurses ${NCURSES_VER}..." "Failed to download ncurses" \
+  execute "Downloading ncurses ${NCURSES_VER} tarball..." "Failed to download ncurses" \
   wget -c "${NCURSES_URL}"
   mkdir -p "${NCURSES_SRC}"
   execute "Extracting ncurses ${NCURSES_VER}..." "Failed to extract ncurses" \

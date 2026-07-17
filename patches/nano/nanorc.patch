@@ -1,76 +1,49 @@
-A .nanorc next to nano.exe is used exclusively, overriding all other
+A .nanorc next to nano is used exclusively, overriding all other
 locations, so nano can run as a portable app.
 
 diff --git a/src/rcfile.c b/src/rcfile.c
-index f3cb137..06cc8fb 100644
+index 59d932ae..7031ca05 100644
 --- a/src/rcfile.c
 +++ b/src/rcfile.c
-@@ -1733,26 +1733,49 @@ void do_rcfiles(void)
- 		if (is_good_file(nanorc))
+@@ -1733,4 +1733,41 @@ void do_rcfiles(void)
  			parse_one_nanorc();
  	} else {
--		const char *xdgconfdir;
--
--		/* First process the system-wide nanorc, if it exists and is suitable. */
--		const char* allusers = getenv("ALLUSERSPROFILE");
--		if(!allusers)
--			allusers = "C:/Windows";
--		if (have_nanorc(allusers, "/nanorc"))
--			parse_one_nanorc();
--
--		get_homedir();
--		xdgconfdir = getenv("XDG_CONFIG_HOME");
-+		bool used_exe_rc = FALSE;
-+
-+		/* A .nanorc sitting next to nano.exe takes precedence over every other
-+		 * location, so nano works as a portable app: drop a .nanorc beside the
-+		 * executable and it is used exclusively. */
++		/* A .nanorc next to the executable takes precedence over every other
++		 * location, so nano can run as a portable app: drop a .nanorc beside the
++		 * binary and it is used exclusively. */
 +		char exedir[PATH_MAX];
-+		DWORD exelen = GetModuleFileNameA(NULL, exedir, sizeof(exedir));
-+
-+		if (exelen > 0 && exelen < sizeof(exedir)) {
-+			char *sep = strrchr(exedir, '\\');
-+			if (sep == NULL)
-+				sep = strrchr(exedir, '/');
++		int exelen = 0;
++#ifdef _WIN32
++		exelen = (int)GetModuleFileNameA(NULL, exedir, sizeof(exedir));
++		if (exelen >= (int)sizeof(exedir))
++			exelen = 0;
++#elif defined(__linux__)
++		{
++			ssize_t rl = readlink("/proc/self/exe", exedir, sizeof(exedir) - 1);
++			if (rl > 0) {
++				exedir[rl] = '\0';
++				exelen = (int)rl;
++			}
++		}
++#endif
++		if (exelen > 0) {
++			char *sep = strrchr(exedir, '/');
++#ifdef _WIN32
++			char *bslash = strrchr(exedir, '\\');
++			if (bslash != NULL && (sep == NULL || bslash > sep))
++				sep = bslash;
++#endif
 +			if (sep != NULL) {
 +				*sep = '\0';
 +				if (have_nanorc(exedir, "/.nanorc")) {
 +					parse_one_nanorc();
-+					used_exe_rc = TRUE;
++					check_vitals_mapped();
++					free(nanorc);
++					nanorc = NULL;
++					return;
 +				}
 +			}
 +		}
++
+ 		const char *xdgconfdir;
  
--		/* Now try to find a nanorc file in the user's home directory or in the
--		 * XDG configuration directories, and process the first one found. */
--		if (have_nanorc(homedir, "/" HOME_RC_NAME) ||
--					have_nanorc(xdgconfdir, "/nano/" RCFILE_NAME) ||
--					have_nanorc(homedir, "/.config/nano/" RCFILE_NAME))
--			parse_one_nanorc();
--		else if (homedir == NULL && xdgconfdir == NULL)
--			jot_error(N_("I can't find my home directory!  Wah!"));
-+		if (!used_exe_rc) {
-+			const char *xdgconfdir;
-+
-+			/* First process the system-wide nanorc, if it exists and is suitable. */
-+			const char* allusers = getenv("ALLUSERSPROFILE");
-+			if(!allusers)
-+				allusers = "C:/Windows";
-+			if (have_nanorc(allusers, "/nanorc"))
-+				parse_one_nanorc();
-+
-+			get_homedir();
-+			xdgconfdir = getenv("XDG_CONFIG_HOME");
-+
-+			/* Now try to find a nanorc file in the user's home directory or in the
-+			 * XDG configuration directories, and process the first one found. */
-+			if (have_nanorc(homedir, "/" HOME_RC_NAME) ||
-+						have_nanorc(xdgconfdir, "/nano/" RCFILE_NAME) ||
-+						have_nanorc(homedir, "/.config/nano/" RCFILE_NAME))
-+				parse_one_nanorc();
-+			else if (homedir == NULL && xdgconfdir == NULL)
-+				jot_error(N_("I can't find my home directory!  Wah!"));
-+		}
- 	}
- 
- 	check_vitals_mapped();

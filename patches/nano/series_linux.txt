@@ -1,3 +1,4 @@
+nanorc.patch
 linenumbers-default.patch
 interface.patch
 syntax-colors.patch
