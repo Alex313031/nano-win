@@ -1,9 +1,9 @@
-Windows 2000+ compatibility for ncurses
+Pre-XP (Windows NT 4.0 / 2000) compatibility for ncurses
 
 Resolve AttachConsole() (an XP+ API) dynamically in lib_win32con.c and
-skip it when absent, so its static import no longer makes the Windows 2000
-loader reject the binary. A console (CUI) app already owns its console on Win2K,
-so the attach is unnecessary there anyway.
+skip it when absent, so its static import no longer makes the pre-XP
+loader reject the binary. A console (CUI) app already owns its console on
+NT 4.0 / 2000, so the attach is unnecessary there anyway.
 
 diff --git a/ncurses/tinfo/lib_win32con.c b/ncurses/tinfo/lib_win32con.c
 index e92841a..6802ee8 100644
@@ -16,10 +16,10 @@ index e92841a..6802ee8 100644
 -	    if (!b)
 -		b = AttachConsole(ATTACH_PARENT_PROCESS);
 +	    if (!b) {
-+		/* AttachConsole() is XP+; Windows 2000 lacks it, and a static
++		/* AttachConsole() is XP+; NT 4.0 and 2000 lack it, and a static
 +		 * import of it makes the loader reject the whole binary there.
 +		 * Resolve it dynamically and skip it when absent -- a console
-+		 * (CUI) process already owns its console on 2000, so the attach
++		 * (CUI) process already owns its console pre-XP, so the attach
 +		 * is unnecessary there. */
 +#ifndef ATTACH_PARENT_PROCESS
 +#define ATTACH_PARENT_PROCESS ((DWORD)-1)
