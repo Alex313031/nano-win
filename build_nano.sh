@@ -234,7 +234,7 @@ packageNano() {
   # Zip from the arch dir so the archive holds a top-level ${zipname}/ folder
   # (nano_win32/ or nano_win64/), but write the .zip itself into out/.
   printf "${CYA} Zipping up ${BOLD}${stage}${C0}...\n"
-  ( cd "${BUILD_DIR}/${arch}" && zip -r -q "${OUT_DIR}/${zipfile}" "${zipname}" ) \
+  ( cd "${_builddir}" && zip -r -q "${OUT_DIR}/${zipfile}" "${zipname}" ) \
     || error_exit "Failed to create ${zipfile}"
   rm -rf "${stage}"
   log "${GRE}Packaged ${BOLD}${OUT_DIR}/${zipfile}${C0}\n"
