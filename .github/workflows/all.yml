@@ -1,0 +1,103 @@
+name: Build Nano for All Platforms
+# Master workflow: tick which toolchain builds to run, then "Run workflow".
+# Boolean inputs render as checkboxes; each ticked flavor is built by calling its
+# workflow as a reusable workflow (workflow_call), unticked ones are skipped via
+# `if:`. Selected flavors run in parallel and every per-arch artifact lands under
+# this one run. Each of the four can also still be run on its own dispatch.
+
+# Cancel an in-progress run when a newer commit is pushed to the same branch/PR,
+# so a new push supersedes the build already running for the old commit.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# checkout needs read; rolling the "CI-Build" prerelease (below) needs write.
+# Artifact upload uses the runtime token, not these scopes. Pull-request runs
+# only build + upload artifacts (the publish step is skipped for them).
+permissions:
+  contents: write
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+  workflow_dispatch:
+    inputs:
+      win32:
+        description: Build Windows x86
+        type: boolean
+        default: true
+      win64:
+        description: Build Windows x64
+        type: boolean
+        default: true
+      linux32:
+        description: Build Linux x86
+        type: boolean
+        default: true
+      linux64:
+        description: Build Linux x64
+        type: boolean
+        default: true
+
+jobs:
+  # On push/PR every flavor builds; on manual dispatch each checkbox gates its job
+  # (inputs.* only exist for workflow_dispatch, so they'd be empty on push).
+  win-x86:
+    name: Windows 32 Bit
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.win32 }}
+    uses: ./.github/workflows/win32.yml
+  win-x64:
+    name: Windows 64 Bit
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.win64 }}
+    uses: ./.github/workflows/win64.yml
+  linux-x86:
+    name: Linux 32 Bit
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.linux32 }}
+    uses: ./.github/workflows/linux-i686.yml
+  linux-x64:
+    name: Linux 64 Bit
+    if: ${{ github.event_name != 'workflow_dispatch' || inputs.linux64 }}
+    uses: ./.github/workflows/linux-x64.yml
+
+  # Roll the fixed "CI-Build" prerelease to this commit so it always tracks the
+  # latest build under a stable tag -- scripts can fetch the newest zips from a
+  # constant URL (.../releases/download/CI-Build/nano_win32.zip, nano_win64.zip,
+  # nano_linux_x86.zip, nano_linux_x64.zip) without knowing the commit hash. This
+  # runs ONCE after all four builds (which only build + upload artifacts), so the
+  # release holds every zip atomically -- no per-arch delete/create race. Only on
+  # pushes to main; `needs` + success() means it publishes only if all four passed.
+  publish:
+    name: Publish CI-Build
+    needs: [win-x86, win-x64, linux-x86, linux-x64]
+    if: ${{ success() && github.event_name == 'push' }}
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+          pattern: nano_*
+          merge-multiple: true
+      - name: Roll CI-Build prerelease
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Release notes = a header line + the full commit message (%B), so a
+          # multi-line commit message customizes the notes.
+          {
+            echo "Automated build of commit ${{ github.sha }}"
+            echo
+            echo "For official releases, see the version-tagged releases on this page."
+            echo
+            echo "----"
+            git log -1 --format='%B'
+          } > release-notes.md
+          # Delete the old release + tag, then recreate at this commit with all zips.
+          gh release delete CI-Build --cleanup-tag --yes || true
+          gh release create CI-Build $(find dist -name 'nano_*.zip') \
+            --target "${{ github.sha }}" \
+            --title "CI Build (latest)" \
+            --notes-file release-notes.md

@@ -1,0 +1,52 @@
+name: Nano Linux x64 Build
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build Nano Linux x64
+    runs-on: ubuntu-22.04
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Build Dependencies
+        run: |
+          sudo apt update
+          sudo apt install -y build-essential gcc g++ zip unzip wget tar git patch autoconf automake autopoint pkg-config gettext
+
+      - name: Build Linux x64
+        run: ./build_nano.sh -64 --linux --package
+
+      - name: Upload Build Logs
+        # Builds run non-verbose, so on failure the compiler output is only in
+        # the build logs -- publish them so the failure can be diagnosed. The
+        # shared log covers the fetch/patch phase; each arch has its own.
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-logs-${{ github.run_id }}
+          path: |
+            _build/build/build.log
+            _build/build/*/build_*.log
+          if-no-files-found: warn
+
+      - name: Fetch Git Commit
+        # On pull_request the checkout HEAD is an ephemeral merge commit, so take
+        # the PR head SHA from the event; fall back to github.sha for other events.
+        run: |
+          SHA=${{ github.event.pull_request.head.sha || github.sha }}
+          echo "SHA_SHORT=${SHA:0:6}" >> "$GITHUB_ENV"
+
+      - name: Upload Runner Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nano_linux_x64-${{ env.SHA_SHORT }}
+          path: out/nano_*.zip
+          if-no-files-found: error
