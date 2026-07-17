@@ -39,22 +39,22 @@ jobs:
       - name: Download MinGW
         # Use our own MinGW fork for compiling Windows builds
         run: |
-          wget "${MINGW_BASE_URL}/mingw_gcc_linux_i686.zip"
-          wget "${MINGW_BASE_URL}/mingw_gcc_linux_x64.zip"
-          unzip -o mingw_gcc_linux_i686.zip -d "$HOME"
-          unzip -o mingw_gcc_linux_x64.zip -d "$HOME"
-          rm -f mingw_gcc_linux_i686.zip mingw_gcc_linux_x64.zip
+          wget "${MINGW_BASE_URL}/mingw_llvm_linux_i686.zip"
+          wget "${MINGW_BASE_URL}/mingw_llvm_linux_x64.zip"
+          unzip -o mingw_llvm_linux_i686.zip -d "$HOME"
+          unzip -o mingw_llvm_linux_x64.zip -d "$HOME"
+          rm -f mingw_llvm_linux_i686.zip mingw_llvm_linux_x64.zip
           # Fail fast if either cross-compiler can't run on this host.
-          "$HOME/i686/bin/i686-w64-mingw32-gcc" --version
-          "$HOME/x64/bin/x86_64-w64-mingw32-gcc" --version
-          echo "$HOME/x64/bin" >> "$GITHUB_PATH"
-          echo "$HOME/i686/bin" >> "$GITHUB_PATH"
+          "$HOME/i686_llvm/bin/i686-w64-mingw32-clang" --version
+          "$HOME/x64_llvm/bin/x86_64-w64-mingw32-clang" --version
+          echo "$HOME/x64_llvm/bin" >> "$GITHUB_PATH"
+          echo "$HOME/i686_llvm/bin" >> "$GITHUB_PATH"
 
       - name: Build x86 (Windows 2000+)
-        run: ./build_nano.sh x86 --package
+        run: ./build_nano.sh x86 --llvm --package
 
       - name: Build x64 (Windows Server 2003+)
-        run: ./build_nano.sh x64 --package
+        run: ./build_nano.sh x64 --llvm --package
 
       - name: Upload Build Logs
         # Builds run non-verbose, so on failure the compiler output is only in
