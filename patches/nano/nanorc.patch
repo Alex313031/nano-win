@@ -1,5 +1,5 @@
-A .nanorc next to nano is used exclusively, overriding all other
-locations, so nano can run as a portable app.
+# A .nanorc next to nano is used exclusively, overriding all other
+# locations, so nano can run as a portable app.
 
 diff --git a/src/rcfile.c b/src/rcfile.c
 index 59d932ae..7031ca05 100644

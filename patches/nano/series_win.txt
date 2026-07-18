@@ -1,9 +1,27 @@
+# Patches applied (in order) onto vanilla GNU nano v9.1 for the Windows build.
+# Grouped: core port, then Windows-only additions, then the cross-platform
+# enhancements -- which are exactly series_linux.txt, in the same order.
+#
+# Hard ordering constraints (everything else is grouping for readability):
+#   * nano-win32 must be FIRST -- it creates win32.h and is the base every
+#     other patch builds on.
+#   * rc-icon -> version-info -> time32-compat must keep this relative order:
+#     all three edit src/Makefile.am and each was generated atop the previous
+#     (version-info's hunk context overlaps rc-icon's; time32-compat's context
+#     references version.c, which version-info adds).
+
+# --- core Win32 port ---
 nano-win32.patch
-nanorc.patch
+
+# --- Windows-only additions ---
+win32-resize.patch
 rc-icon.patch
 version-info.patch
 time32-compat.patch
-linenumbers-default.patch
 default-crlf.patch
+
+# --- cross-platform enhancements (identical to series_linux.txt) ---
+nanorc.patch
+linenumbers-default.patch
 interface.patch
 syntax-colors.patch

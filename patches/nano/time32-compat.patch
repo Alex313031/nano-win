@@ -1,7 +1,7 @@
-Provide _time32() for legacy x64 Windows. XP x64 / Server 2003 ship an
-msvcrt.dll that exports _time64 but not _time32, which the mingw-w64 x64
-runtime references; defining it here (delegating to _time64) keeps nano.exe
-loadable there. x64-only; 32-bit builds import plain time().
+# Provide _time32() for legacy x64 Windows. XP x64 / Server 2003 ship an
+# msvcrt.dll that exports _time64 but not _time32, which the mingw-w64 x64
+# runtime references; defining it here (delegating to _time64) keeps nano.exe
+# loadable there. x64-only; 32-bit builds import plain time().
 
 diff --git a/src/Makefile.am b/src/Makefile.am
 index b7bb65a..53cba98 100644

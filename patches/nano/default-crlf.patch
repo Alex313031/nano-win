@@ -1,4 +1,4 @@
-Makes new files default to DOS/CRLF line endings.
+# Makes new files default to DOS/CRLF line endings.
 
 diff --git a/src/files.c b/src/files.c
 index 02a1503..0badd86 100644

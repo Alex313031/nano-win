@@ -1,5 +1,5 @@
-Patches nano to be compatible with Windows
-Originally from https://github.com/lhmouse/nano-win/tree/win
+# Patches nano to be compatible with Windows
+# Originally from https://github.com/lhmouse/nano-win/tree/win
 
 diff --git a/README b/README
 index 734b406..f200873 100644

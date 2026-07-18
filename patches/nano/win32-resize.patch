@@ -1,0 +1,24 @@
+# Make nano act on console resizes on Windows.
+#
+# Windows has no SIGWINCH, so nanos SIGWINCH-driven resize never fires. The
+# win32 console driver now reports resizes as KEY_RESIZE (ncurses win32con-
+# resize.patch); turn that into the same the_window_resized trigger used on Unix
+# so the screen re-lays-out. Guarded to _WIN32 (Linux keeps using SIGWINCH).
+
+diff --git a/src/winio.c b/src/winio.c
+index f0bfffe..5d17ed6 100644
+--- a/src/winio.c
++++ b/src/winio.c
+@@ -225,6 +225,12 @@ void read_keys_from(WINDOW *frame)
+ #else
+ 		if (!the_window_resized)
+ 			input = wgetch(frame);
++#if defined(_WIN32) && defined(KEY_RESIZE)
++		/* The win32 console driver reports a resize as KEY_RESIZE; turn it
++		 * into the resize trigger that SIGWINCH provides on Unix. */
++		if (input == KEY_RESIZE)
++			the_window_resized = TRUE;
++#endif
+ 		if (the_window_resized) {
+ 			regenerate_screen();
+ 			input = THE_WINDOW_RESIZED;

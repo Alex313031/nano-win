@@ -1,9 +1,9 @@
-Pre-XP (Windows NT 4.0 / 2000) compatibility for ncurses
-
-Resolve AttachConsole() (an XP+ API) dynamically in lib_win32con.c and
-skip it when absent, so its static import no longer makes the pre-XP
-loader reject the binary. A console (CUI) app already owns its console on
-NT 4.0 / 2000, so the attach is unnecessary there anyway.
+# Pre-XP (Windows NT 4.0 / 2000) compatibility for ncurses
+#
+# Resolve AttachConsole() (an XP+ API) dynamically in lib_win32con.c and
+# skip it when absent, so its static import no longer makes the pre-XP
+# loader reject the binary. A console (CUI) app already owns its console on
+# NT 4.0 / 2000, so the attach is unnecessary there anyway.
 
 diff --git a/ncurses/tinfo/lib_win32con.c b/ncurses/tinfo/lib_win32con.c
 index e92841a..6802ee8 100644

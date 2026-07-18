@@ -1,0 +1,59 @@
+# Report console resizes to the application (ncurses win32 console driver).
+#
+# The win32con driver never sets ENABLE_WINDOW_INPUT, so Windows queues no
+# resize events; twait would consume them and the read loop drops them anyway.
+# Enable ENABLE_WINDOW_INPUT, surface WINDOW_BUFFER_SIZE_EVENT from twait, and
+# return KEY_RESIZE from _nc_console_read, so the app (nano, via win32-resize.
+# patch) can re-layout. NOTE: the legacy console decouples window from screen
+# buffer, so a window-only drag emits no event there; this covers the modern
+# console (and any real buffer-size change).
+
+diff --git a/ncurses/tinfo/lib_win32con.c b/ncurses/tinfo/lib_win32con.c
+index e92841a..ae52fbc 100644
+--- a/ncurses/tinfo/lib_win32con.c
++++ b/ncurses/tinfo/lib_win32con.c
+@@ -256,7 +256,7 @@ _nc_console_setmode(HANDLE hdl, const TTY * arg)
+ #endif
+ 	T(("lib_win32con:_nc_console_setmode %s", _nc_trace_ttymode(arg)));
+ 	if (hdl == WINCONSOLE.inp) {
+-	    dwFlag = arg->dwFlagIn | ENABLE_MOUSE_INPUT | VT_FLAG_IN;
++	    dwFlag = arg->dwFlagIn | ENABLE_MOUSE_INPUT | ENABLE_WINDOW_INPUT | VT_FLAG_IN;
+ 	    TRCTTYIN(dwFlag);
+ 	    SetConsoleMode(hdl, dwFlag);
+ 
+@@ -270,7 +270,7 @@ _nc_console_setmode(HANDLE hdl, const TTY * arg)
+ 	    SetConsoleMode(hdl, dwFlag);
+ 
+ 	    alt = WINCONSOLE.inp;
+-	    dwFlag = arg->dwFlagIn | ENABLE_MOUSE_INPUT;
++	    dwFlag = arg->dwFlagIn | ENABLE_MOUSE_INPUT | ENABLE_WINDOW_INPUT;
+ 	    TRCTTYIN(dwFlag);
+ 	    SetConsoleMode(alt, dwFlag);
+ 	    T(("effective mode set %s", _nc_trace_ttymode(&TRCTTY)));
+@@ -949,6 +949,15 @@ _nc_console_twait(
+ 				goto end;
+ 			    }
+ 			    continue;
++			case WINDOW_BUFFER_SIZE_EVENT:
++			    /* Surface console resizes as input so the following read
++			     * returns KEY_RESIZE; do not consume the event here. */
++			    if (mode & TW_INPUT) {
++				code = TW_INPUT;
++				goto end;
++			    }
++			    CONSUME();
++			    continue;
+ 			    /* e.g., FOCUS_EVENT */
+ 			default:
+ 			    T(("twait:event Type %d", inp_rec.EventType));
+@@ -1073,6 +1082,10 @@ _nc_console_read(
+ 		    *buf = KEY_MOUSE;
+ 		    break;
+ 		}
++	    } else if (inp_rec.EventType == WINDOW_BUFFER_SIZE_EVENT) {
++		/* Report console resizes as KEY_RESIZE; base Windows has no SIGWINCH. */
++		*buf = KEY_RESIZE;
++		break;
+ 	    }
+ 	    continue;
+ 	}

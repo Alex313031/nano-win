@@ -1,4 +1,4 @@
-Richer C/C++ syntax highlighting.
+# Richer C/C++ syntax highlighting.
 
 diff --git a/syntax/c.nanorc b/syntax/c.nanorc
 index 905587c..9c759d0 100644

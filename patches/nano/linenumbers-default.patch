@@ -1,5 +1,5 @@
-Makes line numbers show by default.
-Use `unset linenumbers` in .nanorc to disable.
+# Makes line numbers show by default.
+# Use `unset linenumbers` in .nanorc to disable.
 
 diff --git a/src/nano.c b/src/nano.c
 index 60d0556..737b710 100644

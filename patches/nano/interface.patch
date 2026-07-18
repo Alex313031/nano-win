@@ -1,4 +1,4 @@
-Colorful compiled-in interface defaults, without using nanorc files.
+# Colorful compiled-in interface defaults, without using nanorc files.
 
 diff --git a/src/color.c b/src/color.c
 index 5e38140..0b67606 100644

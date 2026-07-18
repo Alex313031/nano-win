@@ -1,6 +1,6 @@
-Compile in a Windows resource (icon + version info) via windres: adds src/nano.rc
-and the src/Makefile.am windres rule. nano.rc #includes version.h (supplied by
-version-info.patch); the binary nano.ico is copied into src/ by build_nano.sh.
+# Compile in a Windows resource (icon + version info) via windres: adds src/nano.rc
+# and the src/Makefile.am windres rule. nano.rc #includes version.h (supplied by
+# version-info.patch); the binary nano.ico is copied into src/ by build_nano.sh.
 
 diff --git a/src/Makefile.am b/src/Makefile.am
 index a678e29..3bb7cff 100644

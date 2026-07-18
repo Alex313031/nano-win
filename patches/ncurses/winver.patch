@@ -1,4 +1,4 @@
-Build the driver targeting WINVER=0x0400 (Windows NT 4) instead of 0x0501 (Windows XP).
+# Build the driver targeting WINVER=0x0400 (Windows NT 4) instead of 0x0501 (Windows XP).
 
 diff --git a/configure b/configure
 index 48ad381..4e833aa 100755
