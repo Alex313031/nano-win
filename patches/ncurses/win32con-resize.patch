@@ -1,15 +1,29 @@
-# Report console resizes to the application (ncurses win32 console driver).
+# Make console resizes actually re-layout the application (ncurses win32 driver).
 #
-# The win32con driver never sets ENABLE_WINDOW_INPUT, so Windows queues no
-# resize events; twait would consume them and the read loop drops them anyway.
-# Enable ENABLE_WINDOW_INPUT, surface WINDOW_BUFFER_SIZE_EVENT from twait, and
-# return KEY_RESIZE from _nc_console_read, so the app (nano, via win32-resize.
-# patch) can re-layout. NOTE: the legacy console decouples window from screen
-# buffer, so a window-only drag emits no event there; this covers the modern
-# console (and any real buffer-size change).
+# Windows has no SIGWINCH, and three things were missing: the driver never set
+# ENABLE_WINDOW_INPUT (so no WINDOW_BUFFER_SIZE_EVENT was queued), twait consumed
+# any such event, and -- because this ncurses is configured without USE_SIZECHANGE
+# (no TIOCGWINSZ on the cross-build) -- its automatic-resize machinery
+# (SCREEN._resize, the active half of _nc_update_screensize) is compiled out, so
+# nothing ever updated LINES/COLS. Delivering KEY_RESIZE alone therefore made nano
+# redraw at the old size (flicker) without ever resizing.
+#
+# Fix, all in ncurses/tinfo/lib_win32con.c:
+#   * _nc_console_setmode: add ENABLE_WINDOW_INPUT so resize events are queued.
+#   * _nc_console_twait: surface WINDOW_BUFFER_SIZE_EVENT as input (TW_INPUT).
+#   * _nc_console_read: on such an event, re-query the console (_nc_console_get_SBI)
+#     and, only when the visible size actually changed, call resize_term() to
+#     update LINES/COLS and stdscr, then return KEY_RESIZE. nano turns that into
+#     its resize trigger (win32-resize.patch). No-op events -- including the
+#     buffer-size events our own resize emits -- are swallowed, so the app neither
+#     flickers nor feeds back endlessly.
+#
+# NOTE: the legacy console (pre-Win10) decouples window from screen buffer, so a
+# window-only drag emits no event there; this covers the modern console and any
+# real buffer-size change.
 
 diff --git a/ncurses/tinfo/lib_win32con.c b/ncurses/tinfo/lib_win32con.c
-index e92841a..ae52fbc 100644
+index 3a0f466..bd06c39 100644
 --- a/ncurses/tinfo/lib_win32con.c
 +++ b/ncurses/tinfo/lib_win32con.c
 @@ -256,7 +256,7 @@ _nc_console_setmode(HANDLE hdl, const TTY * arg)
@@ -46,14 +60,32 @@ index e92841a..ae52fbc 100644
  			    /* e.g., FOCUS_EVENT */
  			default:
  			    T(("twait:event Type %d", inp_rec.EventType));
-@@ -1073,6 +1082,10 @@ _nc_console_read(
+@@ -1073,6 +1082,28 @@ _nc_console_read(
  		    *buf = KEY_MOUSE;
  		    break;
  		}
 +	    } else if (inp_rec.EventType == WINDOW_BUFFER_SIZE_EVENT) {
-+		/* Report console resizes as KEY_RESIZE; base Windows has no SIGWINCH. */
-+		*buf = KEY_RESIZE;
-+		break;
++		/* The console was resized.  Base Windows has no SIGWINCH, and this
++		 * ncurses is built without USE_SIZECHANGE, so its automatic-resize
++		 * machinery is compiled out -- the driver must do it.  Re-query the
++		 * console and, only when the visible size actually changed, call
++		 * resize_term() to update LINES/COLS (and stdscr), then report
++		 * KEY_RESIZE.  No-op events are swallowed -- including the buffer-
++		 * size events our own resize emits -- so the app neither flickers
++		 * nor feeds back endlessly. */
++		int old_l = 0, old_c = 0, new_l = 0, new_c = 0;
++
++		_nc_console_size(&old_l, &old_c);	/* from the cached SBI */
++		_nc_console_get_SBI();			/* re-query the console */
++		_nc_console_size(&new_l, &new_c);	/* from the refreshed SBI */
++
++		if (new_l > 0 && new_c > 0 &&
++		    (new_l != old_l || new_c != old_c)) {
++		    resize_term(new_l, new_c);
++		    *buf = KEY_RESIZE;
++		    break;
++		}
++		continue;
  	    }
  	    continue;
  	}

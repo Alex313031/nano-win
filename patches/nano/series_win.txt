@@ -1,4 +1,4 @@
-# Patches applied (in order) onto vanilla GNU nano v9.1 for the Windows build.
+# Patches applied (in order) onto vanilla GNU nano for the Windows build.
 # Grouped: core port, then Windows-only additions, then the cross-platform
 # enhancements -- which are exactly series_linux.txt, in the same order.
 #

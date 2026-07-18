@@ -1,3 +1,5 @@
+# Note, keep patches in proper order.
+
 winver.patch
 win2k.patch
 win32con-resize.patch

@@ -38,7 +38,7 @@ the Linux build uses upstream ncurses unpatched.
 |-------|--------------|
 | `winver.patch` | Targets the win32 console driver at `WINVER=0x0400` (Windows NT 4.0) instead of `0x0501` (Windows XP). |
 | `win2k.patch` | Resolves `AttachConsole()` — an XP+ API, absent on NT 4.0 and 2000 — dynamically, so its missing static import no longer stops the binary from loading on pre-XP Windows. (A console app already owns its console there, so the attach is unneeded anyway.) |
-| `win32con-resize.patch` | Makes the driver's read loop (`_nc_console_read`) report console resizes as `KEY_RESIZE` — it otherwise consumes `WINDOW_BUFFER_SIZE_EVENT` silently — so nano can re-layout on resize (paired with nano's `win32-resize.patch`). |
+| `win32con-resize.patch` | Makes console resizes actually re-layout the app. Windows has no `SIGWINCH`, and this ncurses is built without `USE_SIZECHANGE` (so its auto-resize machinery is compiled out). The patch enables `ENABLE_WINDOW_INPUT`, surfaces `WINDOW_BUFFER_SIZE_EVENT`, and in `_nc_console_read` re-queries the console and calls `resize_term()` to update `LINES`/`COLS` before returning `KEY_RESIZE` (which nano acts on via `win32-resize.patch`). Only fires on a real size change, so it neither flickers nor feeds back. |
 
 ## Regenerating a patch
 
