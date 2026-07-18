@@ -1,6 +1,6 @@
-Add version.c / version.h and wire them in: version macros consumed by nano.rc,
-plus runtime getters for the nano version (config.h) and the host OS version --
-the latter appended to `nano --version`. Compiled into nano via nano_SOURCES.
+# Add version.c / version.h and wire them in: version macros consumed by nano.rc,
+# plus runtime getters for the nano version (config.h) and the host OS version --
+# the latter appended to `nano --version`. Compiled into nano via nano_SOURCES.
 
 diff --git a/src/Makefile.am b/src/Makefile.am
 index 66283dd..b7bb65a 100644
@@ -17,7 +17,7 @@ index 66283dd..b7bb65a 100644
  nano_LDADD = $(top_builddir)/lib/libgnu.a @LIBINTL@ \
  		$(GETRANDOM_LIB) $(CLOCK_TIME_LIB) $(LIBTHREAD) \
 diff --git a/src/nano.c b/src/nano.c
-index f356d4c..068fae5 100644
+index aef5d4b..c76f186 100644
 --- a/src/nano.c
 +++ b/src/nano.c
 @@ -42,6 +42,7 @@
@@ -38,10 +38,10 @@ index f356d4c..068fae5 100644
  #ifdef ENABLE_COLOR
 diff --git a/src/version.c b/src/version.c
 new file mode 100644
-index 0000000..4984221
+index 0000000..7e5147a
 --- /dev/null
 +++ b/src/version.c
-@@ -0,0 +1,64 @@
+@@ -0,0 +1,112 @@
 +// Version/host-info helpers for the Windows build. Declared in version.h.
 +
 +#ifdef HAVE_CONFIG_H
@@ -70,9 +70,9 @@ index 0000000..4984221
 +#endif
 +}
 +
-+// Host Windows version as "Windows <major>.<minor>.<build>". GetVersionExW reports
-+// the true version on the systems this fork targets (2000 .. 7); the compatibility
-+// shim that lies about the version only kicks in on Windows 8.1+. Cached in a
++// Host OS version as "Windows <major>.<minor>.<build>" (or uname(2)'s string on
++// Linux). On Windows the true NT version is resolved without being fooled by the
++// compatibility shims -- see the per-tier notes in the function body. Cached in a
 +// static buffer (nano's Win32 code is single-threaded).
 +const char *nano_get_os_version(void)
 +{
@@ -80,16 +80,64 @@ index 0000000..4984221
 +
 +	if (buf[0] == '\0') {
 +#if defined(_WIN32)
-+		OSVERSIONINFOW ovi;
++		/* Report the *true* NT kernel version. Two Windows mechanisms lie about
++		 * it: since 8.1, GetVersionEx reports 6.2 (Windows 8) for apps without a
++		 * compatibility manifest; and since XP, the "compatibility mode" tab can
++		 * shim the version an app sees. Resolve dynamically (older targets lack
++		 * the newer calls) and pick, per OS, the API that defeats every lie that
++		 * applies there:
++		 *   RtlGetNtVersionNumbers -- XP+, undocumented. Reads ntdll's baked-in
++		 *       build number, so it ignores BOTH the manifest lie and the compat
++		 *       tab. Preferred whenever present.
++		 *   RtlGetVersion          -- 2000+, documented. Defeats the manifest lie,
++		 *       but the compat tab can still shim it -- so it is only reached on
++		 *       2000, which has neither a compat tab nor RtlGetNtVersionNumbers by
++		 *       name (only by ordinal), and where it is therefore exact.
++		 *   GetVersionExW          -- NT 4.0 fallback; predates both shims, so it
++		 *       cannot lie there. */
++		typedef void (WINAPI *RtlGetNtVersionNumbers_fn)(DWORD *, DWORD *, DWORD *);
++		typedef LONG (WINAPI *RtlGetVersion_fn)(OSVERSIONINFOW *);
++		RtlGetNtVersionNumbers_fn p_RtlGetNtVersionNumbers = NULL;
++		RtlGetVersion_fn p_RtlGetVersion = NULL;
++		HMODULE ntdll;
++		DWORD major = 0, minor = 0, build = 0;
++		BOOL got = FALSE;
 +
-+		SecureZeroMemory(&ovi, sizeof ovi);
-+		ovi.dwOSVersionInfoSize = sizeof ovi;
++		/* ntdll.dll is always mapped, so GetModuleHandle suffices. */
++		ntdll = GetModuleHandleA("ntdll.dll");
++		if (ntdll != NULL) {
++			p_RtlGetNtVersionNumbers = (RtlGetNtVersionNumbers_fn)
++				GetProcAddress(ntdll, "RtlGetNtVersionNumbers");
++			p_RtlGetVersion = (RtlGetVersion_fn)
++				GetProcAddress(ntdll, "RtlGetVersion");
++		}
 +
-+		if (GetVersionExW(&ovi))
++		if (p_RtlGetNtVersionNumbers != NULL) {
++			p_RtlGetNtVersionNumbers(&major, &minor, &build);
++			build &= 0x0FFFFFFF;   /* top nibble is a build-type flag */
++			got = TRUE;
++		} else {
++			OSVERSIONINFOW ovi;
++
++			SecureZeroMemory(&ovi, sizeof ovi);
++			ovi.dwOSVersionInfoSize = sizeof ovi;
++
++			if (p_RtlGetVersion != NULL)
++				got = (p_RtlGetVersion(&ovi) == 0);   /* 0 == STATUS_SUCCESS */
++			else
++				got = GetVersionExW(&ovi);
++
++			if (got) {
++				major = ovi.dwMajorVersion;
++				minor = ovi.dwMinorVersion;
++				build = ovi.dwBuildNumber;
++			}
++		}
++
++		if (got)
 +			snprintf(buf, sizeof buf, "Windows %lu.%lu.%lu",
-+					(unsigned long)ovi.dwMajorVersion,
-+					(unsigned long)ovi.dwMinorVersion,
-+					(unsigned long)ovi.dwBuildNumber);
++					(unsigned long)major, (unsigned long)minor,
++					(unsigned long)build);
 +		else
 +			snprintf(buf, sizeof buf, "Windows (unknown)");
 +#elif defined(__linux__)
