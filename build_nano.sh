@@ -8,7 +8,7 @@
 # mingw cross toolchain, fetching nano (git) and ncurses (tarball) from scratch.
 
 SCRIPTNAME=$(basename "$0")
-SCRIPTVER="1.1.6"
+SCRIPTVER="1.1.7"
 
 # Colors
 YEL='\033[1;33m'  # Yellow
@@ -398,12 +398,14 @@ function buildNano() {
   # Optimization and debug/release flags. Debug builds also keep symbols by
   # installing with plain `make install` instead of `install-strip`.
   local OPT_FLAGS="-Wno-error ${SIMD_FLAGS}"
+  local NANO_LTO=""  # link-time optimization for the release nano binary (see below)
   if [ "$IS_DEBUG" = true ]; then
     OPT_FLAGS+=" -Og -g2 -DDEBUG -D_DEBUG"
     local STRIP_FLAG=""
     local INSTALL_TARGET="install"
   else
     OPT_FLAGS+=" -O3 -g0 -DNDEBUG -D_NDEBUG"
+    NANO_LTO="-flto -ffat-lto-objects"
     local STRIP_FLAG="-s"
     local INSTALL_TARGET="install-strip"
   fi
@@ -531,6 +533,23 @@ function buildNano() {
   fi
   if [ "$IS_DEBUG" = true ]; then
     NANO_FEATURES+=" --enable-debug"
+  fi
+
+  # Link-time optimization for the release nano binary. Two things matter here:
+  #  * -ffat-lto-objects is required, not optional. nano builds its own static
+  #    lib/libgnu.a (gnulib); with plain -flto its members are pure LLVM/GCC
+  #    bitcode, so whether that archive links depends on ar/ranlib being
+  #    LTO-aware. With both a GCC-MinGW and an LLVM-MinGW toolchain on PATH,
+  #    `<host>-ar` frequently resolves to GNU binutils ar (cannot index bitcode)
+  #    even when the compiler is clang -> "undefined symbol: _rpl_close" at link.
+  #    Fat objects also carry normal object code, so any ar can index them.
+  #  * Scoped to nano, not ncurses: ncurses (built above) is large, doesn't need
+  #    it, and keeping it plain-object keeps its build fast.
+  if [ -n "$NANO_LTO" ]; then
+    export CFLAGS="${CFLAGS} ${NANO_LTO}"
+    export CPPFLAGS="${CPPFLAGS} ${NANO_LTO}"
+    export LDFLAGS="${LDFLAGS} ${NANO_LTO}"
+    log "${CYA}LTO      ${C0}= ${BOLD}${NANO_LTO} (nano only)${C0}\n"
   fi
 
   # Build nano itself (out-of-tree against the cloned+patched source in NANO_SRC)
