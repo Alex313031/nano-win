@@ -1,0 +1,18 @@
+# Clarify the exit "Save modified buffer?" prompt with the available keys.
+#
+# Appends "(Y/N/^C)" so the Yes / No / Cancel choices show inline, not only in
+# the shortcut bar. Cross-platform. (Idea from okibcn/nano-for-windows.)
+
+diff --git a/src/nano.c b/src/nano.c
+index 129ff78..8e4976c 100644
+--- a/src/nano.c
++++ b/src/nano.c
+@@ -311,7 +311,7 @@ void do_exit(void)
+ 		if (ISSET(SAVE_ON_EXIT))
+ 			warn_and_briefly_pause(_("No file name"));
+ 
+-		choice = ask_user(YESORNO, _("Save modified buffer? "));
++		choice = ask_user(YESORNO, _("Save modified buffer (Y/N/^C)? "));
+ 	}
+ 
+ 	/* When not saving, or the save succeeds, close the buffer. */
