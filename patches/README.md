@@ -28,6 +28,7 @@ Applied with `git apply`, in `series` order (`nano-win32` must be first).
 | `linenumbers-default.patch` | ✔ | ✔ | Show line numbers by default (`unset linenumbers` in `.nanorc` to disable). |
 | `interface.patch` | ✔ | ✔ | Colorful compiled-in interface defaults, without needing an nanorc file. |
 | `syntax-colors.patch` | ✔ | ✔ | Richer C/C++ syntax highlighting (`c.nanorc`). |
+| `save-prompt.patch` | ✔ | ✔ | Appends `(Y/N/^C)` to the exit "Save modified buffer?" prompt so the choices show inline. (Idea from [okibcn/nano-for-windows](https://github.com/okibcn/nano-for-windows).) |
 
 ## ncurses (`patches/ncurses/`)
 
@@ -38,7 +39,8 @@ the Linux build uses upstream ncurses unpatched.
 |-------|--------------|
 | `winver.patch` | Targets the win32 console driver at `WINVER=0x0400` (Windows NT 4.0) instead of `0x0501` (Windows XP). |
 | `win2k.patch` | Resolves `AttachConsole()` — an XP+ API, absent on NT 4.0 and 2000 — dynamically, so its missing static import no longer stops the binary from loading on pre-XP Windows. (A console app already owns its console there, so the attach is unneeded anyway.) |
-| `win32con-resize.patch` | Makes console resizes actually re-layout the app. Windows has no `SIGWINCH`, and this ncurses is built without `USE_SIZECHANGE` (so its auto-resize machinery is compiled out). The patch enables `ENABLE_WINDOW_INPUT`, surfaces `WINDOW_BUFFER_SIZE_EVENT`, and in `_nc_console_read` re-queries the console and calls `resize_term()` to update `LINES`/`COLS` before returning `KEY_RESIZE` (which nano acts on via `win32-resize.patch`). Only fires on a real size change, so it neither flickers nor feeds back. |
+| `win32con-resize.patch` | Makes console resizes actually re-layout the app. Windows has no `SIGWINCH`, and this ncurses is built without `USE_SIZECHANGE` (so its auto-resize machinery is compiled out). The patch enables `ENABLE_WINDOW_INPUT`, surfaces `WINDOW_BUFFER_SIZE_EVENT`, and in `_nc_console_read` re-queries the console and calls `resize_term()` to update `LINES`/`COLS` before returning `KEY_RESIZE` (which nano acts on via `win32-resize.patch`). Only fires on a real size change, so it neither flickers nor feeds back. Covers where a window resize changes the screen buffer: modern (Win 8+) consoles, and explicit screen-buffer-size changes (console Properties) on legacy ones. |
+| `win32con-legacy-resize.patch` | Drag-to-resize on **legacy** consoles (Win 2000–7). There a window drag changes only the viewport (`srWindow`), which — with nano on an alternate screen buffer — isn't reported and posts no event. `_nc_console_twait` polls the visible size derived from the console **window's client rectangle ÷ font cell size**, and `_nc_console_read` calls `resize_term()` + returns `KEY_RESIZE` once the drag **settles** (debounced, no flicker). Gated to pre-6.2 Windows via `GetVersion()` so the modern path is untouched; window/font APIs resolved dynamically so NT 4.0 still loads (drag-resize unavailable there — use Properties). Approximate (accounts for a vertical scrollbar; other font/DPI edge cases may be off by a cell). |
 
 ## Regenerating a patch
 

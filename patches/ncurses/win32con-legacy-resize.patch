@@ -1,0 +1,238 @@
+# Drag-to-resize on legacy consoles (ncurses win32 driver).
+#
+# win32con-resize.patch reflows on a WINDOW_BUFFER_SIZE_EVENT -- a screen-buffer
+# change, which is what a modern (Win 8+) console does on a window drag. A legacy
+# console (2000..7) changes only the window viewport on a drag, and since nano
+# runs on an alternate screen buffer that viewport (srWindow) is not reported --
+# the drag posts no event and updates nothing pollable in the console API.
+#
+# So on legacy hosts this derives the visible size from the OS window's client
+# rectangle and the console font, polls it on blocking input waits (capped at
+# WINCON_RESIZE_POLL_MS), and calls resize_term() + returns KEY_RESIZE once the
+# drag settles (debounced by WINCON_RESIZE_SETTLE ticks, so no flicker). It is
+# gated to pre-6.2 Windows via GetVersion(), so the modern event path is entirely
+# untouched; the window/font APIs are resolved dynamically, so NT 4.0 (no
+# GetConsoleWindow) still loads -- there drag-resize is simply unavailable and
+# explicit screen-buffer-size changes still resize via win32con-resize.patch.
+
+diff --git a/ncurses/tinfo/lib_win32con.c b/ncurses/tinfo/lib_win32con.c
+index bd06c39..88e4424 100644
+--- a/ncurses/tinfo/lib_win32con.c
++++ b/ncurses/tinfo/lib_win32con.c
+@@ -813,6 +813,161 @@ _nc_console_keyExist(int keycode)
+     returnCode(found);
+ }
+ 
++/* --- Legacy-console drag-resize (win32con-legacy-resize.patch) --------------
++ * A modern console (Win 8+, version 6.2+) resizes the screen buffer on a window
++ * drag and fires WINDOW_BUFFER_SIZE_EVENT, handled above.  A legacy console
++ * (2000..7) changes only the window viewport, and since nano runs on an alternate
++ * screen buffer that viewport (srWindow) is not reported -- a drag posts no event
++ * and updates nothing pollable in the console API.  So there we derive the visible
++ * size from the OS window's client rectangle and the console font, poll it on idle
++ * input waits, and resize once the drag settles (debounced -> no flicker).
++ *
++ * The APIs are XP+ (kernel32) / user32, resolved dynamically so the driver still
++ * loads on NT 4.0 / 2000 (no GetConsoleWindow there -> drag-resize simply
++ * unavailable; explicit screen-buffer-size changes still resize via the event). */
++#define WINCON_RESIZE_POLL_MS   100
++#define WINCON_RESIZE_SETTLE    2	/* stable poll ticks == drag finished */
++
++typedef struct {
++    DWORD nFont;
++    COORD dwFontSize;
++} NC_CONSOLE_FONT_INFO;		/* == CONSOLE_FONT_INFO (absent at WINVER 0x0400) */
++
++typedef HWND(WINAPI * GetConsoleWindow_t) (void);
++typedef BOOL(WINAPI * GetCurrentConsoleFont_t) (HANDLE, BOOL, NC_CONSOLE_FONT_INFO *);
++typedef COORD(WINAPI * GetConsoleFontSize_t) (HANDLE, DWORD);
++typedef BOOL(WINAPI * GetClientRect_t) (HWND, RECT *);
++typedef int (WINAPI * GetSystemMetrics_t) (int);
++
++static GetConsoleWindow_t p_GetConsoleWindow = NULL;
++static GetCurrentConsoleFont_t p_GetCurrentConsoleFont = NULL;
++static GetConsoleFontSize_t p_GetConsoleFontSize = NULL;
++static GetClientRect_t p_GetClientRect = NULL;
++static GetSystemMetrics_t p_GetSystemMetrics = NULL;
++static int lz_ready = -1;	/* -1 unknown, 0 disabled, 1 enabled */
++static int lz_cur_rows = 0, lz_cur_cols = 0;	/* size last applied to ncurses */
++static int lz_seen_rows = 0, lz_seen_cols = 0;	/* size seen at the last poll */
++static int lz_settle = 0;	/* consecutive polls with no change */
++
++/* Resolve the APIs and decide whether legacy drag-resize applies on this host. */
++static bool
++_nc_console_legacy_ready(void)
++{
++    DWORD v, major, minor;
++    HMODULE k32, u32;
++
++    if (lz_ready >= 0)
++	return (bool) (lz_ready == 1);
++    lz_ready = 0;
++
++    v = GetVersion();
++    major = (DWORD) LOBYTE(LOWORD(v));
++    minor = (DWORD) HIBYTE(LOWORD(v));
++    /* Win 8+ (6.2+, and the shim reports 6.2 on 8.1+) resize the buffer on a
++     * drag -- the event path handles them; only legacy needs polling. */
++    if (major > 6 || (major == 6 && minor >= 2))
++	return FALSE;
++
++    if ((k32 = GetModuleHandleA("kernel32.dll")) == NULL)
++	return FALSE;
++    if ((u32 = LoadLibraryA("user32.dll")) == NULL)
++	return FALSE;
++    p_GetConsoleWindow = (GetConsoleWindow_t)
++	GetProcAddress(k32, "GetConsoleWindow");
++    p_GetCurrentConsoleFont = (GetCurrentConsoleFont_t)
++	GetProcAddress(k32, "GetCurrentConsoleFont");
++    p_GetConsoleFontSize = (GetConsoleFontSize_t)
++	GetProcAddress(k32, "GetConsoleFontSize");
++    p_GetClientRect = (GetClientRect_t) GetProcAddress(u32, "GetClientRect");
++    p_GetSystemMetrics = (GetSystemMetrics_t)
++	GetProcAddress(u32, "GetSystemMetrics");
++
++    if (p_GetConsoleWindow != NULL && p_GetCurrentConsoleFont != NULL &&
++	p_GetConsoleFontSize != NULL && p_GetClientRect != NULL)
++	lz_ready = 1;
++    return (bool) (lz_ready == 1);
++}
++
++/* Visible size in character cells, from the console window's client area and the
++ * console font.  Approximate: a vertical scrollbar (buffer taller than the view)
++ * is subtracted from the width. */
++static bool
++_nc_console_legacy_cells(int *rows, int *cols)
++{
++    HWND hwnd;
++    RECT rc;
++    NC_CONSOLE_FONT_INFO cfi;
++    COORD cell;
++    int w, h, r, c;
++
++    if ((hwnd = p_GetConsoleWindow()) == NULL)
++	return FALSE;
++    if (!p_GetClientRect(hwnd, &rc))
++	return FALSE;
++    memset(&cfi, 0, sizeof(cfi));
++    if (!p_GetCurrentConsoleFont(WINCONSOLE.hdl, FALSE, &cfi))
++	return FALSE;
++    cell = p_GetConsoleFontSize(WINCONSOLE.hdl, cfi.nFont);
++    if (cell.X <= 0 || cell.Y <= 0)
++	return FALSE;
++
++    _nc_console_get_SBI();		/* refresh dwSize for the scrollbar test */
++    w = (int) (rc.right - rc.left);
++    h = (int) (rc.bottom - rc.top);
++    r = h / cell.Y;
++    /* A vertical scrollbar appears when the buffer is taller than the view and
++     * eats width, so account for it before deriving the column count. */
++    if (r > 0 && WINCONSOLE.SBI.dwSize.Y > r && p_GetSystemMetrics != NULL)
++	w -= p_GetSystemMetrics(2 /* SM_CXVSCROLL */ );
++    c = w / cell.X;
++    if (r <= 0 || c <= 0)
++	return FALSE;
++    *rows = r;
++    *cols = c;
++    return TRUE;
++}
++
++/* Read-only poll (twait): TRUE once a drag has settled at a new size. */
++static bool
++_nc_console_legacy_pending(void)
++{
++    int rows = 0, cols = 0;
++
++    if (!_nc_console_legacy_ready() || !_nc_console_legacy_cells(&rows, &cols))
++	return FALSE;
++
++    if (lz_cur_rows == 0) {		/* record the baseline */
++	lz_cur_rows = lz_seen_rows = rows;
++	lz_cur_cols = lz_seen_cols = cols;
++	return FALSE;
++    }
++    if (rows == lz_seen_rows && cols == lz_seen_cols) {
++	if ((rows != lz_cur_rows || cols != lz_cur_cols) &&
++	    ++lz_settle >= WINCON_RESIZE_SETTLE)
++	    return TRUE;
++    } else {
++	lz_seen_rows = rows;		/* still moving: restart the settle count */
++	lz_seen_cols = cols;
++	lz_settle = 0;
++    }
++    return FALSE;
++}
++
++/* Apply a settled resize (read path). */
++static bool
++_nc_console_legacy_apply(void)
++{
++    if (lz_cur_rows != 0 &&
++	(lz_seen_rows != lz_cur_rows || lz_seen_cols != lz_cur_cols)) {
++	lz_cur_rows = lz_seen_rows;
++	lz_cur_cols = lz_seen_cols;
++	lz_settle = 0;
++	resize_term(lz_cur_rows, lz_cur_cols);
++	return TRUE;
++    }
++    return FALSE;
++}
++
+ NCURSES_EXPORT(int)
+ _nc_console_twait(
+ 		     const SCREEN *sp,
+@@ -852,8 +1007,16 @@ _nc_console_twait(
+ 
+     while (true) {
+ 	if (!isNoDelay) {
++	    DWORD wait_ms = (DWORD) milliseconds;
++
++	    /* On a legacy console, cap the wait so we can poll for a window
++	     * drag (which posts no event there).  No effect elsewhere. */
++	    if ((mode & TW_INPUT) && wait_ms > WINCON_RESIZE_POLL_MS &&
++		_nc_console_legacy_ready())
++		wait_ms = WINCON_RESIZE_POLL_MS;
++
+ 	    GetSystemTimeAsFileTime(&fstart);
+-	    rc = WaitForSingleObject(hdl, (DWORD) milliseconds);
++	    rc = WaitForSingleObject(hdl, wait_ms);
+ 	    GetSystemTimeAsFileTime(&fend);
+ 	    diff = (int) tdiff(fstart, fend);
+ 	    milliseconds = Adjust(milliseconds, diff);
+@@ -973,10 +1136,19 @@ _nc_console_twait(
+ 	    if (rc != WAIT_TIMEOUT) {
+ 		code = -1;
+ 		break;
+-	    } else {
+-		code = 0;
+-		break;
+ 	    }
++	    /* WAIT_TIMEOUT.  On a legacy console, poll for a settled window drag
++	     * and keep waiting if the caller's own deadline hasn't elapsed. */
++	    if ((mode & TW_INPUT) && _nc_console_legacy_ready()) {
++		if (_nc_console_legacy_pending()) {
++		    code = TW_INPUT;
++		    goto end;
++		}
++		if (milliseconds > 0)
++		    continue;
++	    }
++	    code = 0;
++	    break;
+ 	}
+     }
+   end:
+@@ -1033,6 +1205,13 @@ _nc_console_read(
+ 
+     T((T_CALLED("lib_win32con::_nc_console_read(%p)"), sp));
+ 
++    /* On a legacy console, a settled window drag is delivered here (twait woke
++     * us by polling); apply it before blocking on read_keycode. */
++    if (_nc_console_legacy_apply()) {
++	*buf = KEY_RESIZE;
++	returnCode(1);
++    }
++
+     while ((b = read_keycode(hdl, &inp_rec, 1, &nRead))) {
+ 	if (b && nRead > 0) {
+ 	    if (rc < 0)

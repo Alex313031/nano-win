@@ -3,3 +3,4 @@
 winver.patch
 win2k.patch
 win32con-resize.patch
+win32con-legacy-resize.patch
