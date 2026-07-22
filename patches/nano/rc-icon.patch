@@ -32,7 +32,7 @@ index a678e29..3bb7cff 100644
  	cd $(DESTDIR)$(bindir) && rm -f rnano && $(LN_S) nano rnano
 diff --git a/src/nano.rc b/src/nano.rc
 new file mode 100644
-index 0000000..083360f
+index 0000000..5b36b30
 --- /dev/null
 +++ b/src/nano.rc
 @@ -0,0 +1,57 @@
@@ -84,7 +84,7 @@ index 0000000..083360f
 +            VALUE "OriginalFilename", L"nano.exe"
 +            VALUE "ProductName",      L"Nano"
 +            VALUE "ProductVersion",   NANO_VER_STR
-+            VALUE "Comments",         L"https://github.com/Alex313031/nano-win"
++            VALUE "Comments",         L"https://github.com/Alex313031/nano"
 +        END
 +    END
 +    BLOCK "VarFileInfo"
