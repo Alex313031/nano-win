@@ -8,7 +8,7 @@
 # mingw cross toolchain, fetching nano (git) and ncurses (tarball) from scratch.
 
 SCRIPTNAME=$(basename "$0")
-SCRIPTVER="1.1.8"
+SCRIPTVER="1.1.9"
 
 # Colors
 YEL='\033[1;33m'  # Yellow
@@ -71,7 +71,7 @@ arg_error() {
   local error_msg="$1"
   shift 1
 
-  error_exit "$error_msg, see --help for options" "$error_msg"
+  error_exit "$error_msg, see --help for options"
 }
 
 log() {
@@ -468,8 +468,8 @@ function buildNano() {
   # wWinMain reference, but nano only defines main(), so any -municode (in CFLAGS or
   # LDFLAGS) breaks the link with "undefined reference to wWinMain".
   export CFLAGS="${OPT_FLAGS} ${DEFINES} ${MFLAG} ${PIE_CFLAGS} ${STATIC_LIBGCC} -pipe"
-  export CPPFLAGS="${OPT_FLAGS} ${DEFINES} ${MFLAG} ${PIE_CFLAGS} ${STATIC_LIBSTDCXX} -I${_prefix}/include -pipe"
-  export CXXFLAGS="${CPPFLAGS}"
+  export CXXFLAGS="${OPT_FLAGS} ${DEFINES} ${MFLAG} ${PIE_CFLAGS} ${STATIC_LIBSTDCXX} -I${_prefix}/include -pipe"
+  export CPPFLAGS="${CXXFLAGS}"
   export LDFLAGS="-L${_prefix}/lib ${STATIC_LINK} ${STRIP_FLAG} ${SUBSYS}"
   # Libraries to link
   if [ "$TARGET_LINUX" == "1" ]; then
@@ -573,6 +573,7 @@ function buildNano() {
   #    it, and keeping it plain-object keeps its build fast.
   if [ -n "$NANO_LTO" ]; then
     export CFLAGS="${CFLAGS} ${NANO_LTO}"
+    export CXXFLAGS="${CXXFLAGS} ${NANO_LTO}"
     export CPPFLAGS="${CPPFLAGS} ${NANO_LTO}"
     export LDFLAGS="${LDFLAGS} ${NANO_LTO}"
     log "${CYA}LTO      ${C0}= ${BOLD}${NANO_LTO} (nano only)${C0}\n"
@@ -648,11 +649,11 @@ while :; do
         exit 0
         ;;
     -j|--jobs)
-        if [ "$2" ]; then
+        if [[ "$2" =~ ^[1-9][0-9]*$ ]]; then
           JOBS=$2
           shift
         else
-          arg_error "'--jobs' requires a non-empty option argument"
+          arg_error "'--jobs' requires a numeric argument"
         fi
         ;;
     i686|x32|x86|32|-32|--32)
