@@ -156,7 +156,7 @@ index 0000000..7e5147a
 +}
 diff --git a/src/version.h b/src/version.h
 new file mode 100644
-index 0000000..98001c4
+index 0000000..ff10903
 --- /dev/null
 +++ b/src/version.h
 @@ -0,0 +1,45 @@
@@ -169,7 +169,7 @@ index 0000000..98001c4
 +// own version (configure.ac AC_INIT -> config.h VERSION / PACKAGE_STRING).
 +#define NANO_MAJOR  9
 +#define NANO_MINOR  1
-+#define NANO_PATCH  7
++#define NANO_PATCH  8
 +#define NANO_BUILD  0
 +
 +// Stringize helpers (two levels so the numeric macros above expand first).

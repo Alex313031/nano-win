@@ -15,7 +15,7 @@ index a678e29..3bb7cff 100644
  
  if BUILDING_FROM_GIT
  SOMETHING = "REVISION \"`git describe --tags 2>/dev/null`\""
-@@ -43,7 +43,13 @@ nano_SOURCES = \
+@@ -43,7 +43,15 @@ nano_SOURCES = \
  		winio.c
  
  nano_LDADD = $(top_builddir)/lib/libgnu.a @LIBINTL@ \
@@ -24,8 +24,10 @@ index a678e29..3bb7cff 100644
 +		nano_rc.$(OBJEXT)
 +
 +# Windows resource: application icon + version info, compiled with windres.
-+# nano.rc is added by this patch; the binary nano.ico is copied into src/ by build_nano.sh.
-+nano_rc.$(OBJEXT): $(srcdir)/nano.rc $(srcdir)/nano.ico
++# nano.rc is added by this patch; the binary nano.ico is copied into src/ by
++# build_nano.sh; version.h (whose macros nano.rc consumes, so a version bump
++# must retrigger windres) by version-info.patch, later in the series.
++nano_rc.$(OBJEXT): $(srcdir)/nano.rc $(srcdir)/nano.ico $(srcdir)/version.h
 +	@host_alias@-windres -I$(srcdir) -O coff -i $(srcdir)/nano.rc -o $@
  
  install-exec-hook:
