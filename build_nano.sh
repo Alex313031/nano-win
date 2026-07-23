@@ -8,7 +8,7 @@
 # mingw cross toolchain, fetching nano (git) and ncurses (tarball) from scratch.
 
 SCRIPTNAME=$(basename "$0")
-SCRIPTVER="1.1.7"
+SCRIPTVER="1.1.8"
 
 # Colors
 YEL='\033[1;33m'  # Yellow
@@ -62,7 +62,7 @@ error_exit() {
   if [ "$error_msg" ]; then
     printf "${RED}%s${C0}\n" "$error_msg" >&2
   else
-    printf "${RED}An error occured.${C0}\n" >&2
+    printf "${RED}An error occurred.${C0}\n" >&2
   fi
   exit 1
 }
@@ -119,16 +119,23 @@ apply_series() {
   fi
   [ -f "${series}" ] || error_exit "apply_series: no series file at ${series}"
   local name _rest
+  # Each patch is applied atomically: `git apply` (without --reject) verifies the
+  # whole patch before touching anything, and the patch(1) path dry-runs first.
+  # So a failure leaves the tree clean up to the previous patch in the series --
+  # but since the patched-sentinel is only written after the full series, recovery
+  # from a mid-series failure is still `--srcclean` (hence the error hint).
+  local fail_hint="(tree may be partially patched; run '$SCRIPTNAME --srcclean' and retry)"
   # `|| [ -n "$name" ]` processes a final line that lacks a trailing newline.
   while read -r name _rest || [ -n "${name}" ]; do
     [ -z "${name}" ] && continue             # skip blank lines
     case "${name}" in \#*) continue ;; esac  # skip comment lines
     if [ "${method}" = "git" ]; then
-      execute "Applying ${name}..." "Failed to apply ${name}" \
-          git -C "${target}" apply --reject "${dir}/${name}"
+      execute "Applying ${name}..." "Failed to apply ${name} ${fail_hint}" \
+          git -C "${target}" apply "${dir}/${name}"
     else
-      execute "Applying ${name}..." "Failed to apply ${name}" \
-          patch -N -p1 -d "${target}" -i "${dir}/${name}"
+      execute "Applying ${name}..." "Failed to apply ${name} ${fail_hint}" \
+          sh -c 'patch -N -p1 --dry-run -d "$1" -i "$2" >/dev/null && patch -N -p1 -d "$1" -i "$2"' \
+              _ "${target}" "${dir}/${name}"
     fi
   done < "${series}"
 }
@@ -157,6 +164,7 @@ Options:
   --patch                     Fetch and patch the sources, then stop (no configure/build; no arch needed).
   -c, --clean                 Remove build output and fetched sources (out/ + _build/).
   --distclean                 Remove build output (out/ + build tree), keeping fetched sources.
+  --srcclean                  Remove build tree and fetched sources, keeping out/.
 EOF
 }
 
@@ -223,7 +231,9 @@ packageNano() {
   fi
   log "${GRE}Packaging nano for ${osname} ${arch}...${C0}\n"
 
-  rm -rf "${stage}" "${OUT_DIR}/${zipfile}"
+  # Refresh this arch's deliverables: drop the old zip and any bare executable
+  # from a previous non---package run, so out/ holds only the .zip afterwards.
+  rm -rf "${stage}" "${OUT_DIR}/${zipfile}" "${OUT_DIR}/nano-${arch}${fileext}"
   mkdir -p "${stage}"
   cp -fv "${prefix}/bin/nano${fileext}" "${stage}/"
   # Ship our custom .nanorc (used automatically, since it sits beside nano)
@@ -264,19 +274,34 @@ fetch_ncurses() {
   tar -xzf "${NCURSES_ARCHIVE}" -C "${NCURSES_SRC}" --strip-components=1
 }
 
-# Apply the per-OS patch series onto the vanilla nano source. The sentinel lives
-# inside NANO_SRC (which is per-OS), so a fresh clone (or a wiped NANO_SRC) re-patches.
+# Apply the per-OS patch series onto the vanilla sources. Each tree carries its
+# OWN sentinel (they live inside the per-OS source dirs), so re-fetching one tree
+# re-patches just that tree -- refreshing ncurses can no longer silently build it
+# unpatched behind nano's sentinel, and vice versa.
 apply_patches() {
-  if [ -f "${NANO_SRC}/.nano-patched" ]; then
-    log "${BOLD}Already applied patches.${C0}\n"
-    return
+  # Migrate trees patched before the per-tree sentinels existed: the old flow
+  # patched both trees together under a single sentinel in NANO_SRC. winver.patch
+  # rewrites the WINVER default in nc_win32.h.in, so use that as the "ncurses was
+  # really patched" signature (a fresh unpatched tree fails the grep and re-patches).
+  if [ -f "${NANO_SRC}/.nano-patched" ] && [ ! -f "${NCURSES_SRC}/.ncurses-patched" ] \
+      && grep -q "WINVER 0x0400" "${NCURSES_SRC}/include/nc_win32.h.in" 2>/dev/null; then
+    touch "${NCURSES_SRC}/.ncurses-patched"
   fi
   # Windows NT4 compatibility (WINVER=0x0400 + dynamic AttachConsole) for the win
   # series, applied in series order. ncurses is a plain tarball (not a git repo)
   # nested inside this git repo, so `git apply` would find the parent repo and skip
   # every file -- use patch(1).
-  log "${GRE}Patching ncurses...${C0}\n"
-  apply_series "${HERE}/patches/ncurses" "${NCURSES_SRC}" patch
+  if [ -f "${NCURSES_SRC}/.ncurses-patched" ]; then
+    log "${BOLD}ncurses already patched.${C0}\n"
+  else
+    log "${GRE}Patching ncurses...${C0}\n"
+    apply_series "${HERE}/patches/ncurses" "${NCURSES_SRC}" patch
+    touch "${NCURSES_SRC}/.ncurses-patched"
+  fi
+  if [ -f "${NANO_SRC}/.nano-patched" ]; then
+    log "${BOLD}nano already patched.${C0}\n"
+    return
+  fi
   log "${GRE}Patching nano...${C0}\n"
   # Apply every patch in patches/nano/ in series order (nano-win32 must be first).
   apply_series "${HERE}/patches/nano" "${NANO_SRC}" git
@@ -298,7 +323,8 @@ apply_patches() {
 
 clean_output() {
   printf "${YEL}Cleaning output directory...${C0}\n"
-  rm -rf "${OUT_DIR}"/*.exe "${OUT_DIR}"/*.zip "${OUT_DIR}"/nano
+  # nano* also catches the bare Linux deliverables (nano-x86, nano-x64).
+  rm -rf "${OUT_DIR}"/*.exe "${OUT_DIR}"/*.zip "${OUT_DIR}"/nano*
   printf "${GRE}Done cleaning ${OUT_DIR} ${C0}\n"
 }
 
@@ -568,12 +594,15 @@ function buildNano() {
   make ${INSTALL_TARGET} $VFLAGS # release: install-strip; debug: plain install
   cd "$HERE"
 
-  # copy bare executable deliverable
-  cp -fv "${_prefix}/bin/nano${fileext}" "${OUT_DIR}/nano-${arch}${fileext}"
+  # Copy the bare executable deliverable -- only when not packaging: with
+  # --package, out/ gets just the .zip (the executable ships inside it).
+  if [ ! "$PACKAGE" ]; then
+    cp -fv "${_prefix}/bin/nano${fileext}" "${OUT_DIR}/nano-${arch}${fileext}"
+  fi
 
   log "${GRE}Done building Nano for ${osname} ${arch} (${_debug}) ${C0}\n"
 
-  # Optionally zip the result into out/nano_<os>.zip
+  # Zip the result into out/nano_<os>.zip instead
   if [ "$PACKAGE" ]; then
     packageNano "$arch" "$_prefix"
   fi
